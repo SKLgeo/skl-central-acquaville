@@ -1,0 +1,358 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' file: data:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://xigwlofqkmiibzbongkn.supabase.co wss://xigwlofqkmiibzbongkn.supabase.co https://*.github.com https://*.githubusercontent.com; font-src 'self' data:;" />
+  <title>Acquaville Central</title>
+  <link rel="stylesheet" href="vendor/leaflet/leaflet.css" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <section id="loginView" class="login-view">
+    <div class="login-brand"><img src="logo.png" alt="Acquaville" /></div>
+    <form id="loginForm" class="login-card">
+      <span class="eyebrow">CENTRAL DE VENDAS</span>
+      <h1>Acesso ao sistema</h1>
+      <p>Entre com sua conta autorizada para administrar os lotes.</p>
+      <label><span>E-mail</span><input id="emailInput" type="email" autocomplete="username" required /></label>
+      <label><span>Senha</span><div class="password-field"><input id="passwordInput" type="password" autocomplete="current-password" required /><button type="button" class="password-toggle" id="passwordToggleButton" aria-label="Mostrar senha">Mostrar</button></div></label>
+      <button class="primary-button" type="submit">Entrar na central</button>
+      <button id="showActivationButton" class="link-button" type="button">Tenho um código de primeiro acesso</button>
+      <div id="loginMessage" class="form-message" hidden></div>
+    </form>
+    <form id="activationForm" class="login-card" hidden>
+      <span class="eyebrow">PRIMEIRO ACESSO</span><h1>Ativar minha conta</h1>
+      <label><span>Código recebido</span><input id="inviteCodeInput" autocomplete="one-time-code" required /></label>
+      <label><span>Seu e-mail</span><input id="newEmailInput" type="email" autocomplete="username" required /></label>
+      <label><span>Crie sua senha</span><input id="newPasswordInput" type="password" autocomplete="new-password" required minlength="6" /></label>
+      <button class="primary-button" type="submit">Ativar conta</button>
+      <button id="backLoginButton" class="link-button" type="button">Voltar ao login</button>
+      <div id="activationMessage" class="form-message" hidden></div>
+    </form>
+    <p class="login-footer">ACQUAVILLE THERMAS RESIDENCE RESORT</p>
+  </section>
+
+  <section id="empreendimentoPicker" class="login-view" hidden>
+    <div class="login-card picker-card">
+      <span class="eyebrow">SELECIONE UM EMPREENDIMENTO</span>
+      <h1>Onde você quer trabalhar agora?</h1>
+      <p>Sua conta tem acesso a mais de um empreendimento. Escolha um para continuar — você pode trocar depois, em Configurações.</p>
+      <div id="empreendimentoPickerList" class="empreendimento-list"></div>
+    </div>
+  </section>
+
+  <section id="appView" class="app-view" hidden>
+    <aside class="sidebar">
+      <div class="sidebar-brand"><img src="logo.png" alt="Acquaville" /><span>Central de Vendas</span></div>
+      <nav id="mainNav">
+        <button class="nav-button active" data-page="dashboard"><span>◫</span> Visão geral</button>
+        <button class="nav-button" data-page="lots"><span>⌖</span> Lotes</button>
+        <button class="nav-button" data-page="units" hidden><span>▤</span> Unidades</button>
+        <button class="nav-button" data-page="requests"><span>◎</span> Solicitações <b id="requestCountBadge" hidden>0</b></button>
+        <button class="nav-button admin-or-central" data-page="users"><span>♙</span> Usuários</button>
+        <button class="nav-button admin-or-central" data-page="plan"><span>$</span> Meu plano</button>
+        <button class="nav-button admin-or-central" data-page="payment"><span>💳</span> Formas de pagamento</button>
+        <button class="nav-button admin-or-central" data-page="banking"><span>🏦</span> Dados bancários</button>
+        <button class="nav-button admin-or-central" data-page="commissions"><span>%</span> Comissões</button>
+        <button class="nav-button" data-page="audit"><span>≡</span> Histórico</button>
+        <button class="nav-button" data-page="reports"><span>▤</span> Relatórios</button>
+        <button class="nav-button" data-page="settings"><span>⚙</span> Configurações</button>
+      </nav>
+      <div class="sidebar-user"><strong id="currentUserName">Usuário</strong><span id="currentUserRole">—</span><button id="logoutButton">Sair</button></div>
+    </aside>
+
+    <main class="workspace">
+      <header class="topbar">
+        <div><span class="eyebrow">ACQUAVILLE THERMAS RESIDENCE RESORT</span><h1 id="pageTitle">Visão geral</h1></div>
+        <div class="connection-area"><span id="syncTime">Ainda não sincronizado</span><span id="connectionBadge" class="connection-badge offline">Desconectado</span></div>
+      </header>
+
+      <section id="page-dashboard" class="page active-page">
+        <div id="passwordWarning" class="warning-banner" hidden><strong>Senha temporária:</strong> altere sua senha em Configurações antes de colocar o sistema em uso.</div>
+        <div class="metric-grid">
+          <button class="metric-card status-disponivel" data-status="disponivel"><span>Disponíveis</span><strong id="metricAvailable">0</strong></button>
+          <button class="metric-card status-reservado" data-status="reservado"><span>Reservados</span><strong id="metricReserved">0</strong></button>
+          <button class="metric-card status-vendido" data-status="vendido"><span>Vendidos</span><strong id="metricSold">0</strong></button>
+          <button class="metric-card status-bloqueado" data-status="bloqueado"><span>Bloqueados</span><strong id="metricBlocked">0</strong></button>
+          <button class="metric-card status-nao_informado" data-status="nao_informado"><span>Não informados</span><strong id="metricUnknown">0</strong></button>
+        </div>
+        <div class="dashboard-grid">
+          <article class="panel"><div class="panel-heading"><div><span class="eyebrow">MOVIMENTAÇÃO</span><h2>Solicitações pendentes</h2></div><button class="text-button" data-go="requests">Ver todas</button></div><div id="dashboardRequests" class="compact-list"></div></article>
+          <article class="panel"><div class="panel-heading"><div><span class="eyebrow">ÚLTIMAS AÇÕES</span><h2>Alterações recentes</h2></div><button class="text-button" data-go="audit">Ver histórico</button></div><div id="dashboardAudit" class="compact-list"></div></article>
+        </div>
+      </section>
+
+      <section id="page-lots" class="page">
+        <div class="toolbar">
+          <input id="lotSearchInput" type="search" placeholder="Pesquisar quadra, lote ou cliente" />
+          <select id="lotStatusFilter"><option value="">Todas as situações</option><option value="disponivel">Disponível</option><option value="reservado">Reservado</option><option value="vendido">Vendido</option><option value="bloqueado">Bloqueado</option><option value="nao_informado">Não informado</option></select>
+          <button id="toggleLotViewButton" class="secondary-button">Alternar mapa/lista</button>
+          <button id="toggleBasemapButton" class="secondary-button" hidden>Mapa de ruas</button>
+          <button id="mapa3dButton" class="secondary-button" hidden>Planta 3D</button>
+        </div>
+        <div id="bulkLotToolbar" class="toolbar bulk-toolbar" hidden>
+          <span id="bulkSelectedCount">0 selecionados</span>
+          <select id="bulkStatusSelect">
+            <option value="disponivel">Disponível</option>
+            <option value="reservado">Reservado</option>
+            <option value="vendido">Vendido</option>
+            <option value="bloqueado">Bloqueado</option>
+            <option value="nao_informado">Não informado</option>
+          </select>
+          <button id="bulkApplyButton" class="primary-button">Aplicar aos selecionados</button>
+          <button id="bulkClearButton" class="secondary-button">Limpar seleção</button>
+        </div>
+        <div id="lotMapPanel" class="map-panel"><div id="lotMap"></div><div class="map-legend"><span class="dot disponivel"></span>Disponível <span class="dot reservado"></span>Reservado <span class="dot vendido"></span>Vendido <span class="dot bloqueado"></span>Bloqueado</div></div>
+        <div id="lotTablePanel" class="panel table-panel">
+          <table><thead><tr><th><input type="checkbox" id="selectAllLotsCheckbox" /></th><th>Quadra</th><th>Lote</th><th>Área</th><th>Situação</th><th>Valor</th><th>Cliente</th><th>Atualização</th><th></th></tr></thead><tbody id="lotTableBody"></tbody></table>
+          <div id="lotTableEmpty" class="empty-state" hidden>Nenhum lote encontrado.</div>
+        </div>
+      </section>
+
+      <section id="page-units" class="page">
+        <div class="unit-metric-grid">
+          <button class="unit-metric-card status-disponivel" data-status="disponivel"><span class="unit-metric-icon">🏢</span><div><span>Disponíveis</span><strong id="unitMetricAvailable">0</strong><small id="unitMetricAvailablePct">0% do total</small></div></button>
+          <button class="unit-metric-card status-reservado" data-status="reservado"><span class="unit-metric-icon">🗓️</span><div><span>Reservados</span><strong id="unitMetricReserved">0</strong><small id="unitMetricReservedPct">0% do total</small></div></button>
+          <button class="unit-metric-card status-vendido" data-status="vendido"><span class="unit-metric-icon">🏷️</span><div><span>Vendidos</span><strong id="unitMetricSold">0</strong><small id="unitMetricSoldPct">0% do total</small></div></button>
+          <button class="unit-metric-card status-bloqueado" data-status="bloqueado"><span class="unit-metric-icon">🔒</span><div><span>Bloqueados</span><strong id="unitMetricBlocked">0</strong><small id="unitMetricBlockedPct">0% do total</small></div></button>
+        </div>
+        <div class="unit-hero-banner" id="unitHeroBanner">
+          <div class="unit-hero-overlay">
+            <span class="eyebrow">RESIDENCIAL</span>
+            <h2 id="unitHeroNome">—</h2>
+          </div>
+        </div>
+        <div class="toolbar">
+          <input id="unitSearchInput" type="search" placeholder="Pesquisar unidade, corretor ou cliente" />
+          <select id="unitTorreFilter"><option value="">Todas as torres</option></select>
+          <select id="unitFloorFilter"><option value="">Todos os andares</option></select>
+          <select id="unitStatusFilter"><option value="">Todas as situações</option><option value="disponivel">Disponível</option><option value="reservado">Reservado</option><option value="vendido">Vendido</option><option value="bloqueado">Bloqueado</option></select>
+        </div>
+        <div class="units-layout">
+          <div id="unitTablePanel" class="panel table-panel">
+            <table><thead><tr><th>Unidade</th><th>Torre</th><th>Andar</th><th>Tipo</th><th>Área priv.</th><th>Situação</th><th>Valor</th><th>Cliente</th><th>Atualização</th></tr></thead><tbody id="unitTableBody"></tbody></table>
+            <div id="unitTableEmpty" class="empty-state" hidden>Nenhuma unidade encontrada.</div>
+          </div>
+          <aside class="panel unit-detail-panel">
+            <div id="unitDetailEmpty" class="unit-detail-empty">Selecione uma unidade na tabela para ver os detalhes e ações rápidas.</div>
+            <div id="unitDetailContent" hidden>
+              <div class="unit-detail-heading">
+                <div><h3 id="unitDetailTitle">Apto —</h3><small id="unitDetailMeta">—</small></div>
+                <span id="unitDetailStatus" class="status-pill">—</span>
+              </div>
+              <img id="unitDetailPhoto" class="unit-detail-photo" src="" alt="Planta da unidade" hidden />
+              <div id="unitDetailSpecs" class="unit-detail-specs"></div>
+              <div class="unit-detail-price"><span>Valor de venda</span><strong id="unitDetailValor">R$ —</strong></div>
+              <p class="unit-detail-cliente"><span>Cliente</span><strong id="unitDetailCliente">—</strong></p>
+              <div class="unit-detail-actions">
+                <button id="unitQuickReserve" type="button" class="quick-action-button quick-reserve">Reservar</button>
+                <button id="unitQuickSold" type="button" class="quick-action-button quick-sold">Marcar como vendido</button>
+                <button id="unitQuickBlock" type="button" class="quick-action-button quick-block">Bloquear</button>
+              </div>
+              <button id="unitSimButton" type="button" class="secondary-button full-width">Simular financiamento</button>
+              <button id="unitEditFullButton" type="button" class="secondary-button full-width">Editar unidade</button>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <section id="page-requests" class="page"><div class="toolbar"><select id="requestFilter"><option value="pendente">Pendentes</option><option value="">Todas</option><option value="aprovada">Aprovadas</option><option value="rejeitada">Rejeitadas</option><option value="expirada">Expiradas</option></select><button id="refreshRequestsButton" class="secondary-button">Atualizar</button></div><div id="requestList" class="request-grid"></div><div class="panel" style="margin-top:20px"><h3 style="margin:0 0 4px">Corretores bloqueados</h3><p style="font-size:12px;color:var(--muted);margin:0 0 8px">Quem deixou uma reserva vencer fica sem poder pedir reserva naquele imóvel pelo prazo do bloqueio. Libere aqui se quiser.</p><div id="bloqueiosList" class="compact-list"></div></div></section>
+
+      <section id="page-users" class="page admin-or-central"><div class="page-actions"><p>Crie convites para corretores ou funcionários da central. A pessoa escolhe a própria senha no primeiro acesso.</p><div style="display:flex;gap:10px"><button id="newInviteButton" class="primary-button">Novo convite</button><button id="newDirectUserButton" class="secondary-button">Criar acesso direto (com prazo)</button></div></div><div class="panel table-panel"><table><thead><tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th>Situação</th><th>Último acesso</th><th>Ações</th></tr></thead><tbody id="userTableBody"></tbody></table></div><article class="panel"><div class="panel-heading"><h2>Convites aguardando ativação</h2></div><div id="inviteList" class="invite-list"></div></article></section>
+
+      <section id="page-plan" class="page admin-or-central">
+        <div class="panel">
+          <div class="panel-heading">
+            <div><span class="eyebrow">PACOTE CONTRATADO</span><h2 id="planNameText">—</h2></div>
+            <button id="requestPlanButton" class="primary-button">Solicitar mudança de pacote</button>
+          </div>
+          <div class="metric-grid metric-grid-3">
+            <div class="metric-card"><span>Corretores ativos</span><strong id="planCorretoresUsados">—</strong></div>
+            <div class="metric-card"><span>Limite do pacote</span><strong id="planCorretoresLimite">—</strong></div>
+            <div class="metric-card"><span>Mensalidade atual</span><strong id="planValorMensal">—</strong></div>
+          </div>
+        </div>
+        <article class="panel">
+          <div class="panel-heading"><h2>Meus pedidos</h2></div>
+          <div id="planRequestList" class="compact-list"></div>
+        </article>
+      </section>
+
+      <section id="page-payment" class="page admin-or-central">
+        <div class="page-actions"><p>Cadastre as formas de pagamento que os corretores podem oferecer (ex.: "20% de entrada + 40x"). Elas aparecem na ficha do imóvel no App Corretor.</p><button id="newPaymentPlanButton" class="primary-button">Novo plano de pagamento</button></div>
+        <div id="paymentPlanList" class="compact-list"></div>
+      </section>
+
+      <section id="page-banking" class="page admin-or-central">
+        <div class="page-actions"><p>Dados de cobrança (boleto, PIX, depósito) mostrados ao corretor/cliente para pagamento. Não substitui o contrato oficial — é só informação de referência.</p><button id="newBankingButton" class="primary-button">Novo dado bancário</button></div>
+        <div id="bankingList" class="compact-list"></div>
+      </section>
+
+      <section id="page-commissions" class="page admin-or-central">
+        <div class="page-actions"><p>Controle de comissão por venda. Cada corretor só enxerga a própria comissão no App Corretor.</p><button id="newCommissionButton" class="primary-button">Registrar comissão</button></div>
+        <div class="panel table-panel">
+          <table><thead><tr><th>Corretor</th><th>Valor da venda</th><th>%</th><th>Comissão</th><th>Situação</th><th>Ações</th></tr></thead><tbody id="commissionTableBody"></tbody></table>
+          <div id="commissionTableEmpty" class="empty-state" hidden>Nenhuma comissão registrada.</div>
+        </div>
+      </section>
+
+      <section id="page-audit" class="page"><div class="toolbar"><button id="refreshAuditButton" class="secondary-button">Atualizar histórico</button></div><div id="auditList" class="timeline"></div></section>
+
+      <section id="page-reports" class="page">
+        <div class="toolbar">
+          <button id="refreshReportsButton" class="secondary-button">Atualizar dados</button>
+          <button id="printReportButton" class="secondary-button">Imprimir / Salvar PDF</button>
+        </div>
+        <article class="panel" id="relatoriosMarcaPanel"></article>
+        <div id="reportPrintArea">
+          <article class="panel">
+            <div class="panel-heading"><div><span class="eyebrow">FUNIL DE VENDAS</span><h2>Situação atual dos lotes</h2></div></div>
+            <div id="reportFunnel" class="report-chart"></div>
+          </article>
+          <article class="panel">
+            <div class="panel-heading"><div><span class="eyebrow">EVOLUÇÃO</span><h2>Vendas por semana (últimas 8 semanas)</h2></div><button class="text-button no-print" id="exportSalesCsvButton">Exportar CSV</button></div>
+            <div id="reportSalesChart" class="report-chart"></div>
+          </article>
+          <article class="panel table-panel">
+            <div class="panel-heading"><div><span class="eyebrow">DESEMPENHO</span><h2>Ranking de corretores</h2></div><button class="text-button no-print" id="exportRankingCsvButton">Exportar CSV</button></div>
+            <table><thead><tr><th>Corretor</th><th>Solicitações</th><th>Aprovadas</th><th>Rejeitadas</th><th>Taxa de aprovação</th><th>Tempo médio de resposta</th></tr></thead><tbody id="reportRankingBody"></tbody></table>
+          </article>
+          <article class="panel">
+            <div class="panel-heading"><div><span class="eyebrow">INVENTÁRIO</span><h2>Lista completa de lotes</h2></div><button class="text-button no-print" id="exportLotsCsvButton">Exportar CSV</button></div>
+            <p>Exporta quadra, lote, situação, valor, cliente e última atualização de todos os lotes.</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="page-settings" class="page"><div class="settings-grid"><form id="passwordForm" class="panel form-panel"><span class="eyebrow">SEGURANÇA</span><h2>Alterar minha senha</h2><label><span>Nova senha</span><input id="changedPasswordInput" type="password" required minlength="6" /></label><button class="primary-button">Alterar senha</button></form><div class="panel form-panel"><span class="eyebrow">EMPREENDIMENTO</span><h2 id="settingsEmpreendimentoNome">—</h2><p id="settingsEmpreendimentoTipo" class="muted-text">—</p><button id="switchEmpreendimentoButton" type="button" class="secondary-button full-width">Trocar empreendimento</button></div><div class="panel form-panel"><span class="eyebrow">SOBRE</span><h2>Versão instalada</h2><p id="appVersionText">—</p></div>
+        <div class="panel form-panel admin-or-central" id="simuladorAdminPanel" hidden></div>
+        <div class="panel form-panel admin-only" id="cvcrmPanel">
+          <span class="eyebrow">INTEGRAÇÃO</span>
+          <h2>CV CRM</h2>
+          <p class="muted-text">Conecta este empreendimento ao CV CRM da construtora/incorporadora, só para leitura — disponibilidade e preço oficiais. O CV CRM continua sendo quem manda na gestão real; corretores nunca ganham poder de alterar nada por aqui.</p>
+          <div id="cvcrmStatusRow" class="cvcrm-status-row" hidden>
+            <span id="cvcrmStatusBadge" class="cvcrm-status-badge cvcrm-status-nunca_sincronizado">—</span>
+            <small id="cvcrmStatusDetail">—</small>
+          </div>
+          <label><span>Subdomínio do CV CRM</span><input id="cvcrmDominioInput" placeholder="ex.: urbempreendimentos" /></label>
+          <label><span>E-mail do usuário de integração</span><input id="cvcrmEmailInput" type="email" placeholder="integracao@construtora.com.br" /></label>
+          <label><span>ID do empreendimento no CV CRM</span><input id="cvcrmIdEmpreendimentoInput" type="number" inputmode="numeric" /></label>
+          <p class="muted-text" style="margin-top:-8px">O token de acesso não é digitado aqui — fica guardado com segurança no servidor pela equipe técnica (peça pra configurar o secret <code>CVCRM_TOKEN</code> assim que tiver o token gerado no painel do CV CRM).</p>
+          <div class="form-row">
+            <button id="cvcrmSalvarButton" type="button" class="secondary-button">Salvar configuração</button>
+            <button id="cvcrmTestarButton" type="button" class="secondary-button">Testar conexão</button>
+          </div>
+          <button id="cvcrmSincronizarButton" type="button" class="primary-button full-width">Sincronizar disponibilidade agora</button>
+          <button id="cvcrmSincronizarPrecosButton" type="button" class="secondary-button full-width">Sincronizar preços (em lotes de 25)</button>
+          <div id="cvcrmMessage" class="form-message" hidden></div>
+        </div>
+        <div class="panel form-panel admin-only" id="contractTemplatePanel">
+          <span class="eyebrow">FECHAMENTO E CONTRATO</span>
+          <h2>Modelo de contrato</h2>
+          <p class="muted-text">Modelo em HTML usado para gerar o contrato em PDF quando a Central completa os dados de fechamento de uma venda. Cole aqui o modelo fornecido pela imobiliária/construtora — enquanto isso não chega, use o modelo de exemplo.</p>
+          <p class="muted-text" style="margin-top:-8px">Tokens disponíveis: <code>{{cliente_nome}}</code> <code>{{cliente_cpf}}</code> <code>{{cliente_rg}}</code> <code>{{cliente_estado_civil}}</code> <code>{{cliente_profissao}}</code> <code>{{cliente_telefone}}</code> <code>{{cliente_email}}</code> <code>{{cliente_endereco}}</code> <code>{{forma_pagamento}}</code> <code>{{imovel_identificacao}}</code> <code>{{imovel_area}}</code> <code>{{valor}}</code> <code>{{empreendimento_nome}}</code> <code>{{data_atual}}</code></p>
+          <textarea id="contractTemplateInput" rows="10" style="font-family:ui-monospace,Consolas,monospace;font-size:12px"></textarea>
+          <div class="form-row">
+            <button id="loadExampleTemplateButton" type="button" class="secondary-button">Carregar modelo de exemplo</button>
+            <button id="saveContractTemplateButton" type="button" class="primary-button">Salvar modelo</button>
+          </div>
+          <small id="contractTemplateStatus" class="muted-text"></small>
+          <div id="contractTemplateMessage" class="form-message" hidden></div>
+        </div>
+      </div></section>
+    </main>
+  </section>
+
+  <dialog id="contractDialog"><form method="dialog" class="dialog-card"><button class="dialog-close" type="button" value="cancel">×</button><span class="eyebrow">FECHAMENTO</span><h2 id="contractDialogTitle">Dados do cliente e contrato</h2>
+    <p style="font-size:12px;color:var(--muted);margin:-6px 0 4px">Aviso de privacidade: os dados abaixo são tratados conforme a LGPD (Lei nº 13.709/2018) e usados apenas para o fechamento desta venda/contrato.</p>
+    <div class="form-row">
+      <label><span>Nome completo</span><input id="contractNomeInput" required /></label>
+      <label><span>CPF</span><input id="contractCpfInput" /></label>
+    </div>
+    <div class="form-row">
+      <label><span>RG</span><input id="contractRgInput" /></label>
+      <label><span>Estado civil</span><input id="contractEstadoCivilInput" /></label>
+    </div>
+    <div class="form-row">
+      <label><span>Profissão</span><input id="contractProfissaoInput" /></label>
+      <label><span>Telefone</span><input id="contractTelefoneInput" /></label>
+    </div>
+    <label><span>E-mail</span><input id="contractEmailInput" type="email" /></label>
+    <div class="form-row">
+      <label><span>Endereço (rua e número)</span><input id="contractEnderecoInput" /></label>
+      <label><span>Bairro</span><input id="contractBairroInput" /></label>
+    </div>
+    <div class="form-row">
+      <label><span>Cidade</span><input id="contractCidadeInput" /></label>
+      <label><span>UF</span><input id="contractUfInput" maxlength="2" /></label>
+    </div>
+    <label><span>CEP</span><input id="contractCepInput" /></label>
+    <label><span>Forma de pagamento</span><select id="contractPaymentPlanInput"><option value="">Selecione...</option></select></label>
+    <div class="dialog-actions">
+      <button id="saveContractDataButton" type="button" class="secondary-button">Salvar dados</button>
+      <button id="generateContractButton" type="button" class="primary-button">Gerar contrato (PDF)</button>
+    </div>
+    <small id="contractStatusInfo" class="muted-text"></small>
+    <div id="contractMessage" class="form-message" hidden></div>
+  </form></dialog>
+
+  <div id="contractPrintArea"></div>
+
+  <dialog id="resetPasswordDialog"><form method="dialog" class="dialog-card"><button class="dialog-close" type="button" value="cancel">×</button><span class="eyebrow">REDEFINIR SENHA</span><h2>Nova senha temporária</h2><p style="color:var(--muted);font-size:12px;margin:-8px 0 0">Informe ao usuário para trocar assim que possível.</p><label><span>Nova senha (mínimo 6 caracteres)</span><input id="resetPasswordInput" type="text" minlength="6" required /></label><button id="confirmResetPasswordButton" type="button" class="primary-button">Redefinir senha</button><div id="resetPasswordMessage" class="form-message" hidden></div></form></dialog>
+
+  <dialog id="deleteUserDialog"><form method="dialog" class="dialog-card"><button class="dialog-close" type="button" value="cancel">×</button><span class="eyebrow">EXCLUIR USUÁRIO</span><h2>Excluir <span id="deleteUserName">—</span>?</h2><p style="color:var(--muted);font-size:12px;margin:-8px 0 0">Isso remove o login para sempre — não é possível desfazer. O histórico de lotes e solicitações desse usuário é preservado, só perde a atribuição de quem fez.</p><label><span>Digite o nome exatamente como mostrado para confirmar</span><input id="deleteUserConfirmInput" required /></label><button id="confirmDeleteUserButton" type="button" class="danger-button">Excluir usuário</button><div id="deleteUserMessage" class="form-message" hidden></div></form></dialog>
+
+  <dialog id="unitAdminDialog"><form method="dialog" class="dialog-card"><button class="dialog-close" type="button" value="cancel">×</button><span class="eyebrow">CONTROLE DA UNIDADE</span><h2 id="unitAdminDialogTitle">Apto —</h2><div id="unitAdminDialogMeta" class="dialog-meta"></div><label><span>Situação</span><select id="editUnitStatus"><option value="disponivel">Disponível</option><option value="reservado">Reservado</option><option value="vendido">Vendido</option><option value="bloqueado">Bloqueado</option></select></label><div class="form-row"><label><span>Valor</span><input id="editUnitValue" placeholder="R$ 0,00" /></label><label><span>Cliente</span><input id="editUnitCustomer" /></label></div><label><span>Observação</span><textarea id="editUnitNote" rows="4"></textarea></label><button id="saveUnitButton" type="button" class="primary-button">Salvar alteração</button><div id="unitAdminDialogMessage" class="form-message" hidden></div></form></dialog>
+
+  <dialog id="lotDialog"><form method="dialog" class="dialog-card"><button class="dialog-close" type="button" value="cancel">×</button><span class="eyebrow">CONTROLE DO LOTE</span><h2 id="lotDialogTitle">Quadra — · Lote —</h2><div id="lotDialogMeta" class="dialog-meta"></div><label><span>Situação</span><select id="editLotStatus"><option value="disponivel">Disponível</option><option value="reservado">Reservado</option><option value="vendido">Vendido</option><option value="bloqueado">Bloqueado</option><option value="nao_informado">Não informado</option></select></label><div class="form-row"><label><span>Valor</span><input id="editLotValue" placeholder="R$ 0,00" /></label><label><span>Cliente</span><input id="editLotCustomer" /></label></div><label><span>Observação</span><textarea id="editLotNote" rows="4"></textarea></label><button id="saveLotButton" type="button" class="primary-button">Salvar alteração</button><button id="lotSimButton" type="button" class="secondary-button full-width">Simular financiamento</button><div id="lotDialogMessage" class="form-message" hidden></div></form></dialog>
+
+  <dialog id="requestDialog"><form method="dialog" class="dialog-card"><button class="dialog-close" type="button" value="cancel">×</button><span class="eyebrow">SOLICITAÇÃO DO CORRETOR</span><h2 id="requestDialogTitle">Analisar solicitação</h2><p style="font-size:12px;color:var(--muted);margin:0 0 -4px">Aviso de privacidade: os dados do cliente exibidos abaixo devem ser tratados conforme a LGPD (Lei nº 13.709/2018), com uso restrito à análise desta solicitação.</p><div id="requestDialogContent"></div><label><span>Situação do lote se aprovada</span><select id="requestLotStatus"><option value="reservado">Reservado</option><option value="vendido">Vendido</option><option value="disponivel">Disponível</option></select></label><p style="font-size:12px;color:var(--muted);margin:-4px 0 0">Aprovar como <strong>Reservado</strong> dá ao corretor um prazo limitado (padrão 2 h) para juntar a documentação. Se não concluir, o lote libera sozinho e o corretor fica bloqueado nele por 24 h — você pode liberar antes, na aba Solicitações.</p><label><span>Observação da central</span><textarea id="requestReviewNote" rows="3"></textarea></label><div class="dialog-actions"><button id="rejectRequestButton" type="button" class="danger-button">Rejeitar</button><button id="approveRequestButton" type="button" class="primary-button">Aprovar</button></div><div id="requestDialogMessage" class="form-message" hidden></div></form></dialog>
+
+  <dialog id="inviteDialog"><form method="dialog" class="dialog-card"><button class="dialog-close" type="button" value="cancel">×</button><span class="eyebrow">NOVO ACESSO</span><h2>Gerar convite</h2><label><span>Nome da pessoa</span><input id="inviteNameInput" required /></label><label><span>Perfil</span><select id="inviteRoleInput"><option value="corretor">Corretor</option><option value="central_vendas">Controle de vendas</option><option value="administrador">Administrador</option></select></label><label><span>Empreendimentos com acesso</span></label><label class="checkbox-row"><input id="inviteEmpAllInput" type="checkbox" /><span>Todos</span></label><div id="inviteEmpList" class="checkbox-list"></div><button id="createInviteButton" type="button" class="primary-button">Gerar código</button><div id="inviteResult" class="invite-result" hidden></div></form></dialog>
+
+  <dialog id="directUserDialog"><form method="dialog" class="dialog-card"><button class="dialog-close" type="button" value="cancel">×</button><span class="eyebrow">ACESSO DIRETO</span><h2>Criar usuário já com senha</h2><p style="color:var(--muted);font-size:12px;margin:-8px 0 0">Cria o login pronto na hora (sem esperar a pessoa ativar um convite). Útil para testes ou acessos temporários.</p><label><span>Nome da pessoa</span><input id="directNameInput" required /></label><label><span>E-mail</span><input id="directEmailInput" type="email" required /></label><label><span>Senha</span><input id="directPasswordInput" type="text" minlength="6" required /></label><label><span>Perfil</span><select id="directRoleInput"><option value="corretor">Corretor</option><option value="central_vendas">Controle de vendas</option><option value="administrador">Administrador</option></select></label><label><span>Empreendimentos com acesso</span></label><label class="checkbox-row"><input id="directEmpAllInput" type="checkbox" /><span>Todos</span></label><div id="directEmpList" class="checkbox-list"></div><label><span>Validade do acesso</span><select id="directExpiryInput"><option value="">Sem validade (nunca expira)</option><option value="2">2 horas</option><option value="8">8 horas</option><option value="24">1 dia</option><option value="168">7 dias</option><option value="720">30 dias</option></select></label><button id="createDirectUserButton" type="button" class="primary-button">Criar acesso</button><div id="directUserMessage" class="form-message" hidden></div></form></dialog>
+
+  <dialog id="userEmpreendimentosDialog"><form method="dialog" class="dialog-card"><button class="dialog-close" type="button" value="cancel">×</button><span class="eyebrow">ACESSO POR EMPREENDIMENTO</span><h2>Empreendimentos de <span id="userEmpreendimentosName">—</span></h2><p style="color:var(--muted);font-size:12px;margin:-8px 0 0">Marque quais empreendimentos esta pessoa deve enxergar. Desmarcar remove o acesso na hora.</p><label><span>Empreendimentos com acesso</span></label><label class="checkbox-row"><input id="userEmpAllInput" type="checkbox" /><span>Todos</span></label><div id="userEmpList" class="checkbox-list"></div><button id="saveUserEmpreendimentosButton" type="button" class="primary-button">Salvar</button><div id="userEmpreendimentosMessage" class="form-message" hidden></div></form></dialog>
+
+  <dialog id="planRequestDialog"><form method="dialog" class="dialog-card"><button class="dialog-close" type="button" value="cancel">×</button><span class="eyebrow">MEU PLANO</span><h2>Solicitar mudança de pacote</h2><p style="color:var(--muted);font-size:12px;margin:-8px 0 0">Seu pedido vai direto para a nossa equipe avaliar. Assim que aprovado, o novo limite já entra em vigor automaticamente.</p><label><span>Pacote desejado</span><select id="planPackageInput"><option value="Até 100 corretores">Até 100 corretores</option><option value="Até 300 corretores">Até 300 corretores</option><option value="Até 1000 corretores">Até 1000 corretores</option><option value="Personalizado">Personalizado (descreva abaixo)</option></select></label><label><span>Mensagem</span><textarea id="planObservationInput" rows="4" placeholder="Conte um pouco sobre sua necessidade..."></textarea></label><button id="submitPlanRequestButton" type="button" class="primary-button">Enviar pedido</button><div id="planRequestMessage" class="form-message" hidden></div></form></dialog>
+
+  <dialog id="paymentPlanDialog"><form method="dialog" class="dialog-card"><button class="dialog-close" type="button" value="cancel">×</button><span class="eyebrow">FORMA DE PAGAMENTO</span><h2 id="paymentPlanDialogTitle">Novo plano</h2><label><span>Nome do plano</span><input id="paymentPlanNameInput" placeholder="ex.: 20% de entrada + 40x" required /></label><label><span>Descrição</span><textarea id="paymentPlanDescInput" rows="2" placeholder="Detalhe visível ao corretor"></textarea></label><label class="checkbox-row"><input id="paymentPlanActiveInput" type="checkbox" checked /><span>Plano ativo (visível ao corretor)</span></label><div class="panel-heading" style="margin-top:8px"><h3>Etapas do plano</h3><button id="addSerieRowButton" type="button" class="secondary-button">+ Adicionar etapa</button></div><div id="paymentPlanSeriesList"></div><button id="savePaymentPlanButton" type="button" class="primary-button">Salvar plano</button><div id="paymentPlanMessage" class="form-message" hidden></div></form></dialog>
+
+  <dialog id="deletePaymentPlanDialog"><form method="dialog" class="dialog-card"><button class="dialog-close" type="button" value="cancel">×</button><span class="eyebrow">EXCLUIR PLANO</span><h2>Excluir <span id="deletePaymentPlanName">—</span>?</h2><p style="color:var(--muted);font-size:12px;margin:-8px 0 0">O plano deixa de aparecer para os corretores imediatamente.</p><button id="confirmDeletePaymentPlanButton" type="button" class="danger-button">Excluir plano</button></form></dialog>
+
+  <dialog id="bankingDialog"><form method="dialog" class="dialog-card"><button class="dialog-close" type="button" value="cancel">×</button><span class="eyebrow">DADO BANCÁRIO</span><h2 id="bankingDialogTitle">Novo dado bancário</h2><label><span>Tipo</span><select id="bankingTipoInput"><option value="pix">PIX</option><option value="boleto">Boleto</option><option value="deposito">Depósito/TED</option><option value="outro">Outro</option></select></label><div class="form-row"><label><span>Banco</span><input id="bankingBancoInput" /></label><label><span>Agência</span><input id="bankingAgenciaInput" /></label></div><div class="form-row"><label><span>Conta</span><input id="bankingContaInput" /></label><label><span>Chave PIX</span><input id="bankingChavePixInput" /></label></div><label><span>Titular</span><input id="bankingTitularInput" /></label><label><span>CPF/CNPJ do titular</span><input id="bankingDocumentoInput" /></label><label><span>Instruções adicionais</span><textarea id="bankingInstrucoesInput" rows="2"></textarea></label><label class="checkbox-row"><input id="bankingAtivoInput" type="checkbox" checked /><span>Ativo (visível ao corretor)</span></label><button id="saveBankingButton" type="button" class="primary-button">Salvar</button><div id="bankingMessage" class="form-message" hidden></div></form></dialog>
+
+  <dialog id="deleteBankingDialog"><form method="dialog" class="dialog-card"><button class="dialog-close" type="button" value="cancel">×</button><span class="eyebrow">EXCLUIR</span><h2>Excluir este dado bancário?</h2><button id="confirmDeleteBankingButton" type="button" class="danger-button">Excluir</button></form></dialog>
+
+  <dialog id="commissionDialog"><form method="dialog" class="dialog-card"><button class="dialog-close" type="button" value="cancel">×</button><span class="eyebrow">COMISSÃO</span><h2>Registrar comissão</h2><label><span>Corretor</span><select id="commissionCorretorInput"></select></label><div class="form-row"><label><span>Valor da venda</span><input id="commissionValorVendaInput" placeholder="R$ 0,00" /></label><label><span>Percentual (%)</span><input id="commissionPercentualInput" type="number" step="0.01" placeholder="ex.: 5" /></label></div><label><span>Valor da comissão</span><input id="commissionValorComissaoInput" placeholder="Calculado automaticamente, ou informe manualmente" /></label><label><span>Observação</span><textarea id="commissionObservacaoInput" rows="2"></textarea></label><button id="saveCommissionButton" type="button" class="primary-button">Registrar</button><div id="commissionMessage" class="form-message" hidden></div></form></dialog>
+
+  <div id="mapa3dOverlay" class="mapa3d-overlay" hidden>
+    <div class="mapa3d-topbar">
+      <div class="mapa3d-heading"><span class="eyebrow">PLANTA INTERATIVA</span><h2>Arraste para girar · role para zoom</h2></div>
+      <button id="mapa3dCloseButton" class="close-button" type="button" aria-label="Fechar planta 3D">×</button>
+    </div>
+    <div id="mapa3dContainer" class="mapa3d-container"></div>
+    <div id="mapa3dLoading" class="mapa3d-loading"><span class="mapa3d-spinner"></span>Carregando planta 3D…</div>
+    <div class="mapa3d-legend">
+      <span><i style="background:#2f8a56"></i>Disponível</span>
+      <span><i style="background:#d59a22"></i>Reservado</span>
+      <span><i style="background:#bd5147"></i>Vendido</span>
+      <span><i style="background:#477fa4"></i>Bloqueado</span>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" hidden></div>
+  <script src="vendor/leaflet/leaflet.js"></script>
+  <script src="vendor/supabase/supabase.js"></script>
+  <script src="vendor/three/three.min.js"></script>
+  <script src="vendor/three/OrbitControls.js"></script>
+  <script src="vendor/three/mapa3d.js"></script>
+  <script src="data/lotes.js"></script>
+  <script src="vendor/xlsx/xlsx.mini.min.js"></script>
+  <script src="simulador.js"></script>
+  <script src="simulador-admin.js"></script>
+  <script src="relatorios-marca.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
