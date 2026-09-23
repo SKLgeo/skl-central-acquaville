@@ -34,7 +34,7 @@
     // uma conta com acesso múltiplo veria os empreendimentos de outro cliente
     // dentro do app com a marca da Acquaville.
     const SLUGS_PERMITIDOS = [ "acquaville" ];
-    const APP_VERSION = "0.2.0";
+    const APP_VERSION = "0.2.1";
     if ($("appVersionText")) $("appVersionText").textContent = `v${APP_VERSION}`;
     const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
         auth: {
@@ -520,10 +520,10 @@
         if (!mapa3dDados) mapa3dDados = await carregarMapa3D();
         if (!mapa3dDados) {
             $("mapa3dOverlay").hidden = true;
-            toast("Planta 3D não disponível para este empreendimento.");
+            toast("Mapa interativo não disponível para este empreendimento.");
             return;
         }
-        mapa3dInstance = window.SKLMapa3D.init($("mapa3dContainer"), {
+        mapa3dInstance = window.SKLMapaImagem.init($("mapa3dContainer"), {
             imagemUrl: mapa3dDados.imagem_url,
             larguraPx: mapa3dDados.largura_px,
             alturaPx: mapa3dDados.altura_px,

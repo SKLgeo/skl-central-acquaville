@@ -89,7 +89,7 @@
           <select id="lotStatusFilter"><option value="">Todas as situações</option><option value="disponivel">Disponível</option><option value="reservado">Reservado</option><option value="vendido">Vendido</option><option value="bloqueado">Bloqueado</option><option value="nao_informado">Não informado</option></select>
           <button id="toggleLotViewButton" class="secondary-button">Alternar mapa/lista</button>
           <button id="toggleBasemapButton" class="secondary-button" hidden>Mapa de ruas</button>
-          <button id="mapa3dButton" class="secondary-button" hidden>Planta 3D</button>
+          <button id="mapa3dButton" class="secondary-button" hidden>Mapa</button>
         </div>
         <div id="bulkLotToolbar" class="toolbar bulk-toolbar" hidden>
           <span id="bulkSelectedCount">0 selecionados</span>
@@ -329,11 +329,11 @@
 
   <div id="mapa3dOverlay" class="mapa3d-overlay" hidden>
     <div class="mapa3d-topbar">
-      <div class="mapa3d-heading"><span class="eyebrow">PLANTA INTERATIVA</span><h2>Arraste para girar · role para zoom</h2></div>
+      <div class="mapa3d-heading"><span class="eyebrow">MAPA INTERATIVO</span><h2>Toque em um lote para ver detalhes</h2></div>
       <button id="mapa3dCloseButton" class="close-button" type="button" aria-label="Fechar planta 3D">×</button>
     </div>
     <div id="mapa3dContainer" class="mapa3d-container"></div>
-    <div id="mapa3dLoading" class="mapa3d-loading"><span class="mapa3d-spinner"></span>Carregando planta 3D…</div>
+    <div id="mapa3dLoading" class="mapa3d-loading"><span class="mapa3d-spinner"></span>Carregando mapa…</div>
     <div class="mapa3d-legend">
       <span><i style="background:#2f8a56"></i>Disponível</span>
       <span><i style="background:#d59a22"></i>Reservado</span>
@@ -344,10 +344,8 @@
 
   <div id="toast" class="toast" hidden></div>
   <script src="vendor/leaflet/leaflet.js"></script>
+  <script src="vendor/leaflet/mapa-imagem.js"></script>
   <script src="vendor/supabase/supabase.js"></script>
-  <script src="vendor/three/three.min.js"></script>
-  <script src="vendor/three/OrbitControls.js"></script>
-  <script src="vendor/three/mapa3d.js"></script>
   <script src="data/lotes.js"></script>
   <script src="vendor/xlsx/xlsx.mini.min.js"></script>
   <script src="simulador.js"></script>
