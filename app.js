@@ -34,7 +34,7 @@
     // uma conta com acesso múltiplo veria os empreendimentos de outro cliente
     // dentro do app com a marca da Acquaville.
     const SLUGS_PERMITIDOS = [ "acquaville" ];
-    const APP_VERSION = "0.3.0";
+    const APP_VERSION = "0.3.1";
     if ($("appVersionText")) $("appVersionText").textContent = `v${APP_VERSION}`;
     const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
         auth: {
@@ -565,6 +565,7 @@
         modoEdicaoMapa = false;
         $("editorMapaPainel").hidden = true;
         $("mapa3dLegend").hidden = false;
+        $("mapa3dContainer").classList.remove("com-painel-editor");
     }
 
     // --- Editor do mapa interativo (só Central Windows / Electron, só administrador) ---
@@ -593,6 +594,7 @@
         $("editorMapaPainel").hidden = false;
         $("editorMapaForm").hidden = true;
         $("editorMapaVazio").hidden = false;
+        $("mapa3dContainer").classList.add("com-painel-editor");
         atualizarBotaoSalvarMapa();
         if (mapa3dInstance) mapa3dInstance.destruir();
         mapa3dInstance = window.SKLMapaImagem.init($("mapa3dContainer"), {
@@ -715,6 +717,7 @@
         $("editarMapaButton").hidden = !podeEditarMapa();
         $("mapa3dHeadingText").textContent = "Toque em um lote para ver detalhes";
         $("mapa3dEyebrow").textContent = "MAPA INTERATIVO";
+        $("mapa3dContainer").classList.remove("com-painel-editor");
         if (mapa3dInstance) mapa3dInstance.destruir();
         mapa3dInstance = window.SKLMapaImagem.init($("mapa3dContainer"), {
             imagemUrl: mapa3dDados.imagem_url,
