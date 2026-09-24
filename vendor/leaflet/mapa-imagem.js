@@ -19,18 +19,18 @@
   // extras (adicionarMarcador/redesenharMarcador/removerMarcador) pra o
   // editor manter o mapa em sincronia com a lista de pontos que ele edita.
   var CORES = {
-    disponivel: "#2f8a56",
-    reservado: "#d59a22",
-    vendido: "#bd5147",
-    bloqueado: "#4d83bd",
-    nao_informado: "#8a8a8a"
+    disponivel: "#155c33",
+    reservado: "#8f5c07",
+    vendido: "#7a1f18",
+    bloqueado: "#1e3f66",
+    nao_informado: "#4a4a4a"
   };
-  var COR_INFORMATIVO = "#c9a063";
+  var COR_INFORMATIVO = "#7a5a1e";
 
   function iconeInformativo(selecionado) {
     return L.divIcon({
       className: "mapa-imagem-marcador-info",
-      html: '<span style="display:flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;background:' + COR_INFORMATIVO + ';border:2px solid ' + (selecionado ? "#ffe08a" : "#fff") + ';box-shadow:0 2px 6px rgba(0,0,0,.35);color:#fff;font-size:14px;">&#128247;</span>',
+      html: '<span style="display:flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;background:' + COR_INFORMATIVO + ';border:3px solid ' + (selecionado ? "#ffe08a" : "#fff") + ';box-shadow:0 2px 6px rgba(0,0,0,.7);color:#fff;font-size:14px;">&#128247;</span>',
       iconSize: [26, 26],
       iconAnchor: [13, 13]
     });
@@ -38,7 +38,7 @@
   function iconeLote(cor, selecionado) {
     return L.divIcon({
       className: "mapa-imagem-marcador-lote",
-      html: '<span style="display:block;width:22px;height:22px;border-radius:50%;background:' + cor + ';border:2px solid ' + (selecionado ? "#ffe08a" : "#fff") + ';box-shadow:0 2px 6px rgba(0,0,0,.35);"></span>',
+      html: '<span style="display:block;width:22px;height:22px;border-radius:50%;background:' + cor + ';border:3px solid ' + (selecionado ? "#ffe08a" : "#fff") + ';box-shadow:0 0 0 1px rgba(0,0,0,.55),0 2px 6px rgba(0,0,0,.7);"></span>',
       iconSize: [22, 22],
       iconAnchor: [11, 11]
     });
