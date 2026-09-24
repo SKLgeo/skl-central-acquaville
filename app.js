@@ -141,6 +141,9 @@
         $("confirmDeleteBankingButton").addEventListener("click", confirmDeleteBanking);
         $("newCommissionButton").addEventListener("click", openCommissionDialog);
         $("saveCommissionButton").addEventListener("click", saveCommission);
+        $("saveCommissionRulesButton").addEventListener("click", saveCommissionRules);
+        $("commissionCondicaoInput").addEventListener("change", preencherPercentualPelasRegras);
+        $("commissionEntradaInput").addEventListener("change", preencherPercentualPelasRegras);
         $("saveLotButton").addEventListener("click", saveLot);
         $("requestFilter").addEventListener("change", renderRequests);
         $("refreshRequestsButton").addEventListener("click", loadRequests);
@@ -1977,6 +1980,54 @@
         }
         commissions = data || [];
         renderCommissions();
+        await loadCommissionRules();
+    }
+    let commissionRules = [];
+    async function loadCommissionRules() {
+        const empId = await empreendimentoIdAtual();
+        const {data: data, error: error} = await sb.from("comissao_regras").select("*").eq("empreendimento_id", empId).order("tipo").order("ordem");
+        if (error) {
+            toast(traduzErro(error.message));
+            return;
+        }
+        commissionRules = data || [];
+        renderCommissionRules();
+    }
+    function renderCommissionRules() {
+        const condicoes = commissionRules.filter(r => r.tipo === "condicao_pagamento");
+        const entradas = commissionRules.filter(r => r.tipo === "tipo_entrada");
+        $("commissionRulesCondicaoBody").innerHTML = condicoes.map(r => `<tr><td>${h(r.rotulo)}</td><td><input type="number" step="0.01" min="0" data-rule-id="${h(r.id)}" value="${r.percentual != null ? h(r.percentual) : ""}" placeholder="—" /></td></tr>`).join("");
+        $("commissionRulesEntradaBody").innerHTML = entradas.map(r => `<tr><td>${h(r.rotulo)}</td><td><input type="number" step="0.01" min="0" data-rule-id="${h(r.id)}" value="${r.percentual != null ? h(r.percentual) : ""}" placeholder="—" /></td></tr>`).join("");
+    }
+    async function saveCommissionRules() {
+        const inputs = [...document.querySelectorAll("#commissionRulesCondicaoBody input[data-rule-id], #commissionRulesEntradaBody input[data-rule-id]")];
+        const updates = inputs.map(input => ({
+            id: input.dataset.ruleId,
+            percentual: input.value.trim() === "" ? null : Number(input.value)
+        }));
+        try {
+            for (const upd of updates) {
+                const {error: error} = await sb.from("comissao_regras").update({
+                    percentual: upd.percentual,
+                    updated_at: new Date().toISOString()
+                }).eq("id", upd.id);
+                if (error) throw error;
+            }
+            await loadCommissionRules();
+            showMessage($("commissionRulesMessage"), "Regras salvas.", true);
+        } catch (error) {
+            showMessage($("commissionRulesMessage"), traduzErro(error.message));
+        }
+    }
+    function preencherPercentualPelasRegras() {
+        const condicaoId = $("commissionCondicaoInput").value;
+        const entradaId = $("commissionEntradaInput").value;
+        const regraEntrada = commissionRules.find(r => r.id === entradaId);
+        const regraCondicao = commissionRules.find(r => r.id === condicaoId);
+        const percentual = (regraEntrada && regraEntrada.percentual != null) ? regraEntrada.percentual
+            : (regraCondicao && regraCondicao.percentual != null) ? regraCondicao.percentual
+            : null;
+        if (percentual != null) $("commissionPercentualInput").value = percentual;
     }
     function commissionStatusPillClass(status) {
         if (status === "paga") return "disponivel";
@@ -2006,6 +2057,10 @@
     function openCommissionDialog() {
         const corretores = users.filter(u => u.papel === "corretor");
         $("commissionCorretorInput").innerHTML = corretores.map(u => `<option value="${h(u.id)}">${h(u.display_name)}</option>`).join("") || '<option value="">Nenhum corretor cadastrado</option>';
+        const condicoes = commissionRules.filter(r => r.tipo === "condicao_pagamento");
+        const entradas = commissionRules.filter(r => r.tipo === "tipo_entrada");
+        $("commissionCondicaoInput").innerHTML = '<option value="">— Não informar —</option>' + condicoes.map(r => `<option value="${h(r.id)}">${h(r.rotulo)}</option>`).join("");
+        $("commissionEntradaInput").innerHTML = '<option value="">— Não informar —</option>' + entradas.map(r => `<option value="${h(r.id)}">${h(r.rotulo)}</option>`).join("");
         $("commissionValorVendaInput").value = "";
         $("commissionPercentualInput").value = "";
         $("commissionValorComissaoInput").value = "";

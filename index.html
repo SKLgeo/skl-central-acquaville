@@ -191,6 +191,23 @@
 
       <section id="page-commissions" class="page admin-or-central">
         <div class="page-actions"><p>Controle de comissão por venda. Cada corretor só enxerga a própria comissão no App Corretor.</p><button id="newCommissionButton" class="primary-button">Registrar comissão</button></div>
+
+        <div class="panel" id="commissionRulesPanel">
+          <div class="page-actions"><p><strong>Regras de comissão</strong> — percentual sugerido conforme a condição de pagamento e o tipo de entrada fechados na proposta. Ao registrar uma comissão, escolher essas duas opções já preenche o percentual (dá pra sobrescrever por lançamento).</p></div>
+          <div class="commission-rules-grid">
+            <div>
+              <h3>Por condição de pagamento</h3>
+              <table><thead><tr><th>Condição</th><th>% comissão</th></tr></thead><tbody id="commissionRulesCondicaoBody"></tbody></table>
+            </div>
+            <div>
+              <h3>Por tipo de entrada</h3>
+              <table><thead><tr><th>Entrada</th><th>% comissão</th></tr></thead><tbody id="commissionRulesEntradaBody"></tbody></table>
+            </div>
+          </div>
+          <button id="saveCommissionRulesButton" class="secondary-button" type="button">Salvar regras</button>
+          <div id="commissionRulesMessage" class="form-message" hidden></div>
+        </div>
+
         <div class="panel table-panel">
           <table><thead><tr><th>Corretor</th><th>Valor da venda</th><th>%</th><th>Comissão</th><th>Situação</th><th>Ações</th></tr></thead><tbody id="commissionTableBody"></tbody></table>
           <div id="commissionTableEmpty" class="empty-state" hidden>Nenhuma comissão registrada.</div>
@@ -325,7 +342,7 @@
 
   <dialog id="deleteBankingDialog"><form method="dialog" class="dialog-card"><button class="dialog-close" type="button" value="cancel">×</button><span class="eyebrow">EXCLUIR</span><h2>Excluir este dado bancário?</h2><button id="confirmDeleteBankingButton" type="button" class="danger-button">Excluir</button></form></dialog>
 
-  <dialog id="commissionDialog"><form method="dialog" class="dialog-card"><button class="dialog-close" type="button" value="cancel">×</button><span class="eyebrow">COMISSÃO</span><h2>Registrar comissão</h2><label><span>Corretor</span><select id="commissionCorretorInput"></select></label><div class="form-row"><label><span>Valor da venda</span><input id="commissionValorVendaInput" placeholder="R$ 0,00" /></label><label><span>Percentual (%)</span><input id="commissionPercentualInput" type="number" step="0.01" placeholder="ex.: 5" /></label></div><label><span>Valor da comissão</span><input id="commissionValorComissaoInput" placeholder="Calculado automaticamente, ou informe manualmente" /></label><label><span>Observação</span><textarea id="commissionObservacaoInput" rows="2"></textarea></label><button id="saveCommissionButton" type="button" class="primary-button">Registrar</button><div id="commissionMessage" class="form-message" hidden></div></form></dialog>
+  <dialog id="commissionDialog"><form method="dialog" class="dialog-card"><button class="dialog-close" type="button" value="cancel">×</button><span class="eyebrow">COMISSÃO</span><h2>Registrar comissão</h2><label><span>Corretor</span><select id="commissionCorretorInput"></select></label><div class="form-row"><label><span>Condição de pagamento</span><select id="commissionCondicaoInput"><option value="">— Não informar —</option></select></label><label><span>Tipo de entrada</span><select id="commissionEntradaInput"><option value="">— Não informar —</option></select></label></div><div class="form-row"><label><span>Valor da venda</span><input id="commissionValorVendaInput" placeholder="R$ 0,00" /></label><label><span>Percentual (%)</span><input id="commissionPercentualInput" type="number" step="0.01" placeholder="ex.: 5" /></label></div><label><span>Valor da comissão</span><input id="commissionValorComissaoInput" placeholder="Calculado automaticamente, ou informe manualmente" /></label><label><span>Observação</span><textarea id="commissionObservacaoInput" rows="2"></textarea></label><button id="saveCommissionButton" type="button" class="primary-button">Registrar</button><div id="commissionMessage" class="form-message" hidden></div></form></dialog>
 
   <div id="mapa3dOverlay" class="mapa3d-overlay" hidden>
     <div class="mapa3d-topbar">
