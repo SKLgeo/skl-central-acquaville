@@ -34,7 +34,7 @@
     // uma conta com acesso múltiplo veria os empreendimentos de outro cliente
     // dentro do app com a marca da Acquaville.
     const SLUGS_PERMITIDOS = [ "acquaville" ];
-    const APP_VERSION = "0.3.3";
+    const APP_VERSION = "0.3.4";
     if ($("appVersionText")) $("appVersionText").textContent = `v${APP_VERSION}`;
     const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
         auth: {
@@ -43,6 +43,7 @@
             storageKey: "sklaqvc-auth"
         }
     });
+    let modoRecuperacaoSenha = /type=recovery/.test(window.location.hash);
     const EMP_ESCOLHIDO_KEY = "skl_empreendimento_escolhido";
     let empreendimentoId = null;
     let empreendimentoTipo = "loteamento";
@@ -98,6 +99,13 @@
     }
 
     bindEvents();
+    sb.auth.onAuthStateChange(evento => {
+        if (evento === "PASSWORD_RECOVERY") {
+            modoRecuperacaoSenha = true;
+            mostrarRecuperacaoNovaSenha();
+        }
+    });
+    if (modoRecuperacaoSenha) mostrarRecuperacaoNovaSenha();
     skl_aguardarSessaoDoShell(1500).then(async sessao => {
         if (sessao) {
             try { await sb.auth.setSession({ access_token: sessao.access_token, refresh_token: sessao.refresh_token }); } catch {}
@@ -109,6 +117,10 @@
         $("activationForm").addEventListener("submit", activateAccount);
         $("showActivationButton").addEventListener("click", () => showAuthForm(true));
         $("backLoginButton").addEventListener("click", () => showAuthForm(false));
+        $("showRecoverButton").addEventListener("click", () => showRecoverForm(true));
+        $("backFromRecoverButton").addEventListener("click", () => showRecoverForm(false));
+        $("recoverForm").addEventListener("submit", sendRecoverEmail);
+        $("recoverNewPasswordForm").addEventListener("submit", saveRecoverNewPassword);
         $("logoutButton").addEventListener("click", logout);
         document.querySelectorAll(".nav-button").forEach(button => button.addEventListener("click", () => showPage(button.dataset.page)));
         document.querySelectorAll("[data-go]").forEach(button => button.addEventListener("click", () => showPage(button.dataset.go)));
@@ -436,6 +448,51 @@
             showMessage($("loginMessage"), traduzErro(error.message));
         }
     }
+    function urlWebPublica() {
+        return (isElectronApp || isNativeCentralApp) ? "https://central-acquaville.sklgeosolucoes.com.br/" : window.location.origin + window.location.pathname;
+    }
+    function showRecoverForm(show) {
+        $("loginForm").hidden = show;
+        $("activationForm").hidden = true;
+        $("recoverForm").hidden = !show;
+        $("recoverMessage").hidden = true;
+    }
+    async function sendRecoverEmail(event) {
+        event.preventDefault();
+        try {
+            const {error: error} = await sb.auth.resetPasswordForEmail($("recoverEmailInput").value.trim(), {
+                redirectTo: urlWebPublica()
+            });
+            if (error) throw error;
+            showMessage($("recoverMessage"), "Se esse e-mail tiver uma conta, chega nele um link pra definir a senha nova em alguns instantes.", true);
+        } catch (error) {
+            showMessage($("recoverMessage"), traduzErro(error.message));
+        }
+    }
+    function mostrarRecuperacaoNovaSenha() {
+        $("loginForm").hidden = true;
+        $("activationForm").hidden = true;
+        $("recoverForm").hidden = true;
+        $("recoverNewPasswordForm").hidden = false;
+    }
+    async function saveRecoverNewPassword(event) {
+        event.preventDefault();
+        try {
+            const {error: error} = await sb.auth.updateUser({
+                password: $("recoverNewPasswordInput").value
+            });
+            if (error) throw error;
+            await sb.auth.signOut();
+            modoRecuperacaoSenha = false;
+            history.replaceState(null, "", window.location.pathname);
+            $("recoverNewPasswordForm").hidden = true;
+            $("recoverNewPasswordForm").reset();
+            $("loginForm").hidden = false;
+            showMessage($("loginMessage"), "Senha alterada com sucesso. Entre com a senha nova.", true);
+        } catch (error) {
+            showMessage($("recoverNewPasswordMessage"), traduzErro(error.message));
+        }
+    }
     async function activateAccount(event) {
         event.preventDefault();
         const email = $("newEmailInput").value.trim();
@@ -458,6 +515,7 @@
         }
     }
     async function restoreSession() {
+        if (modoRecuperacaoSenha) return;
         try {
             const {data: data} = await sb.auth.getSession();
             if (!data?.session) return logout();
@@ -866,6 +924,7 @@
     function showAuthForm(activation) {
         $("loginForm").hidden = activation;
         $("activationForm").hidden = !activation;
+        $("recoverForm").hidden = true;
     }
     function showPage(name) {
         document.querySelectorAll(".page").forEach(page => page.classList.remove("active-page"));

@@ -26,12 +26,27 @@
       <label><span>E-mail</span><input id="emailInput" type="email" autocomplete="username" required /></label>
       <label><span>Senha</span><div class="password-field"><input id="passwordInput" type="password" autocomplete="current-password" required /><button type="button" class="password-toggle" id="passwordToggleButton" aria-label="Mostrar senha">Mostrar</button></div></label>
       <button class="primary-button" type="submit">Entrar na central</button>
-      <button id="showActivationButton" class="link-button" type="button">Tenho um código de primeiro acesso</button>
+      <div class="login-links"><button id="showActivationButton" class="link-button" type="button">Tenho um código de primeiro acesso</button><button id="showRecoverButton" class="link-button" type="button">Esqueci minha senha</button></div>
       <div id="loginMessage" class="form-message" hidden></div>
       <div class="install-box" hidden>
         <button class="install-button" type="button">⬇ Baixar / instalar aplicativo</button>
         <p class="install-hint"></p>
       </div>
+    </form>
+    <form id="recoverForm" class="login-card" hidden>
+      <span class="eyebrow">RECUPERAR SENHA</span><h1>Esqueci minha senha</h1>
+      <p>Informe o e-mail da sua conta. Vamos te enviar um link pra você definir uma senha nova.</p>
+      <label><span>E-mail</span><input id="recoverEmailInput" type="email" autocomplete="username" required /></label>
+      <button class="primary-button" type="submit">Enviar link de recuperação</button>
+      <button id="backFromRecoverButton" class="link-button" type="button">Voltar ao login</button>
+      <div id="recoverMessage" class="form-message" hidden></div>
+    </form>
+    <form id="recoverNewPasswordForm" class="login-card" hidden>
+      <span class="eyebrow">NOVA SENHA</span><h1>Defina sua nova senha</h1>
+      <p>Você veio de um link de recuperação. Escolha uma senha nova pra continuar.</p>
+      <label><span>Nova senha</span><input id="recoverNewPasswordInput" type="password" autocomplete="new-password" required minlength="6" /></label>
+      <button class="primary-button" type="submit">Salvar nova senha</button>
+      <div id="recoverNewPasswordMessage" class="form-message" hidden></div>
     </form>
     <form id="activationForm" class="login-card" hidden>
       <span class="eyebrow">PRIMEIRO ACESSO</span><h1>Ativar minha conta</h1>
