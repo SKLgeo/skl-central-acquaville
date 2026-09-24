@@ -361,9 +361,9 @@
         <div id="editorCampoInfo" style="display:none">
           <label>Título (ex.: "Quiosque da Churrasqueira")</label>
           <input id="editorInfoTituloInput" type="text" />
-          <label>Foto</label>
+          <label>Fotos (até 5 — várias perspectivas ou evolução da obra)</label>
+          <div id="editorInfoFotosLista" class="editor-fotos-lista"></div>
           <input id="editorInfoFotoInput" type="file" accept="image/*" />
-          <img id="editorInfoFoto" hidden />
         </div>
         <div id="editorMapaMsg"></div>
         <button class="danger-button" id="editorExcluirButton" type="button">Excluir este ponto</button>
@@ -373,7 +373,14 @@
     </div>
   </div>
 
-  <dialog id="pontoInfoDialog"><form method="dialog" class="dialog-card"><button class="dialog-close" type="button" value="cancel">×</button><span class="eyebrow">PONTO DE INTERESSE</span><h2 id="pontoInfoTitulo">Ponto de interesse</h2><img id="pontoInfoImagem" alt="" style="width:100%;border-radius:12px;margin-top:10px" /></form></dialog>
+  <dialog id="pontoInfoDialog"><form method="dialog" class="dialog-card"><button class="dialog-close" type="button" value="cancel">×</button><span class="eyebrow">PONTO DE INTERESSE</span><h2 id="pontoInfoTitulo">Ponto de interesse</h2>
+    <div class="ponto-info-foto-wrap">
+      <img id="pontoInfoImagem" alt="" hidden />
+      <button id="pontoInfoPrevButton" type="button" class="ponto-info-nav ponto-info-prev" aria-label="Foto anterior" hidden>‹</button>
+      <button id="pontoInfoNextButton" type="button" class="ponto-info-nav ponto-info-next" aria-label="Próxima foto" hidden>›</button>
+    </div>
+    <div id="pontoInfoContador" class="ponto-info-contador"></div>
+  </form></dialog>
 
   <div id="toast" class="toast" hidden></div>
   <script src="vendor/leaflet/leaflet.js"></script>

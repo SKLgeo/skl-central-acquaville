@@ -34,7 +34,7 @@
     // uma conta com acesso múltiplo veria os empreendimentos de outro cliente
     // dentro do app com a marca da Acquaville.
     const SLUGS_PERMITIDOS = [ "acquaville" ];
-    const APP_VERSION = "0.3.2";
+    const APP_VERSION = "0.3.3";
     if ($("appVersionText")) $("appVersionText").textContent = `v${APP_VERSION}`;
     const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
         auth: {
@@ -542,19 +542,42 @@
         $("editarMapaButton").hidden = !podeEditarMapa();
         $("mapa3dLoading").hidden = true;
     }
+    let pontoInfoImagens = [];
+    let pontoInfoIndice = 0;
+    function imagensDoPonto(ponto) {
+        if (Array.isArray(ponto.imagens) && ponto.imagens.length) return ponto.imagens;
+        return ponto.imagem_url ? [ponto.imagem_url] : [];
+    }
+    function atualizarFotoPontoInfo() {
+        const img = $("pontoInfoImagem");
+        const total = pontoInfoImagens.length;
+        if (total === 0) {
+            img.hidden = true;
+        } else {
+            img.src = pontoInfoImagens[pontoInfoIndice];
+            img.hidden = false;
+        }
+        $("pontoInfoContador").textContent = total > 1 ? `${pontoInfoIndice + 1} / ${total}` : "";
+        $("pontoInfoPrevButton").hidden = total <= 1;
+        $("pontoInfoNextButton").hidden = total <= 1;
+    }
     function mostrarPontoInformativo(ponto) {
         const dialog = $("pontoInfoDialog");
         if (!dialog) return;
         $("pontoInfoTitulo").textContent = ponto.titulo || "Ponto de interesse";
-        const img = $("pontoInfoImagem");
-        if (ponto.imagem_url) {
-            img.src = ponto.imagem_url;
-            img.hidden = false;
-        } else {
-            img.hidden = true;
-        }
+        pontoInfoImagens = imagensDoPonto(ponto);
+        pontoInfoIndice = 0;
+        atualizarFotoPontoInfo();
         dialog.showModal();
     }
+    $("pontoInfoPrevButton")?.addEventListener("click", () => {
+        pontoInfoIndice = (pontoInfoIndice - 1 + pontoInfoImagens.length) % pontoInfoImagens.length;
+        atualizarFotoPontoInfo();
+    });
+    $("pontoInfoNextButton")?.addEventListener("click", () => {
+        pontoInfoIndice = (pontoInfoIndice + 1) % pontoInfoImagens.length;
+        atualizarFotoPontoInfo();
+    });
     function fecharMapa3D() {
         if (modoEdicaoMapa && editorSujo && !confirm("Existem alterações não salvas no mapa. Fechar mesmo assim?")) return;
         $("mapa3dOverlay").hidden = true;
@@ -575,12 +598,17 @@
     // pelo programa, sem depender de mim rodar SQL a cada ajuste. Não
     // aparece no app Android nem no link web (gate por navigator.userAgent).
     const isElectronApp = /Electron\//.test(navigator.userAgent);
+    const isNativeCentralApp = Boolean(window.NativeBridge);
     let modoEdicaoMapa = false;
     let editorPontos = [];
     let editorSelecionado = null;
     let editorSujo = false;
     function podeEditarMapa() {
-        return isElectronApp && currentUser && currentUser.papel === "administrador";
+        // Central Windows (Electron) e Central Android (app nativo) podem
+        // editar o mapa; o Corretor (app e link web) so visualiza — pedido
+        // explicito do Yuri de manter a posicao dos pontos sob controle da
+        // Central, nao do corretor.
+        return (isElectronApp || isNativeCentralApp) && currentUser && currentUser.papel === "administrador";
     }
     function entrarModoEdicaoMapa() {
         if (!mapa3dDados) return;
@@ -645,15 +673,33 @@
         montarSelectLotesEditor();
         if (ponto.tipo !== "informativo" && ponto.lote_id) $("editorLoteSelect").value = ponto.lote_id;
         $("editorInfoTituloInput").value = ponto.titulo || "";
-        if (ponto.imagem_url) {
-            $("editorInfoFoto").src = ponto.imagem_url;
-            $("editorInfoFoto").hidden = false;
-        } else {
-            $("editorInfoFoto").hidden = true;
-        }
+        montarListaFotosEditor(ponto);
         editorAtualizarCoords(ponto);
         mapa3dInstance.destacarMarcador(ponto);
     }
+    const LIMITE_FOTOS_PONTO = 5;
+    function fotosDoPontoEditor(ponto) {
+        if (!Array.isArray(ponto.imagens)) ponto.imagens = ponto.imagem_url ? [ponto.imagem_url] : [];
+        return ponto.imagens;
+    }
+    function montarListaFotosEditor(ponto) {
+        const fotos = fotosDoPontoEditor(ponto);
+        $("editorInfoFotosLista").innerHTML = fotos.map((url, i) => `
+            <div class="editor-foto-item">
+                <img src="${url}" alt="" />
+                <button type="button" data-remover-foto="${i}" aria-label="Remover foto">×</button>
+            </div>`).join("");
+        $("editorInfoFotoInput").disabled = fotos.length >= LIMITE_FOTOS_PONTO;
+        $("editorInfoFotoInput").value = "";
+    }
+    $("editorInfoFotosLista").addEventListener("click", (event) => {
+        const button = event.target.closest("[data-remover-foto]");
+        if (!button || !editorSelecionado) return;
+        const fotos = fotosDoPontoEditor(editorSelecionado);
+        fotos.splice(Number(button.dataset.removerFoto), 1);
+        montarListaFotosEditor(editorSelecionado);
+        editorMarcarSujo();
+    });
     function editorAtualizarCoords(ponto) {
         $("editorMapaCoords").textContent = `x: ${ponto.x}, y: ${ponto.y}`;
     }
@@ -682,7 +728,7 @@
                     tipo: "informativo",
                     id: p.id || ("info-" + Date.now() + "-" + Math.random().toString(36).slice(2)),
                     titulo: p.titulo || "Ponto de interesse",
-                    imagem_url: p.imagem_url || null,
+                    imagens: Array.isArray(p.imagens) ? p.imagens : (p.imagem_url ? [p.imagem_url] : []),
                     x: p.x,
                     y: p.y
                 };
@@ -770,6 +816,11 @@
         if (!editorSelecionado) return;
         const arquivo = $("editorInfoFotoInput").files[0];
         if (!arquivo) return;
+        const fotos = fotosDoPontoEditor(editorSelecionado);
+        if (fotos.length >= LIMITE_FOTOS_PONTO) {
+            $("editorMapaMsg").textContent = `Limite de ${LIMITE_FOTOS_PONTO} fotos por ponto atingido.`;
+            return;
+        }
         $("editorMapaMsg").textContent = "Enviando foto...";
         const caminho = `acquaville/pontos/${Date.now()}_${arquivo.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
         const {error: uploadError} = await sb.storage.from("mapas3d").upload(caminho, arquivo, {upsert: true});
@@ -778,9 +829,8 @@
             return;
         }
         const {data: urlData} = sb.storage.from("mapas3d").getPublicUrl(caminho);
-        editorSelecionado.imagem_url = urlData.publicUrl;
-        $("editorInfoFoto").src = editorSelecionado.imagem_url;
-        $("editorInfoFoto").hidden = false;
+        fotos.push(urlData.publicUrl);
+        montarListaFotosEditor(editorSelecionado);
         $("editorMapaMsg").textContent = "Foto enviada.";
         editorMarcarSujo();
     });
