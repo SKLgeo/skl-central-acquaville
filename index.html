@@ -5,6 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'self' file: data:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://xigwlofqkmiibzbongkn.supabase.co wss://xigwlofqkmiibzbongkn.supabase.co https://*.github.com https://*.githubusercontent.com; font-src 'self' data:;" />
   <title>Acquaville Central</title>
+  <meta name="theme-color" content="#163D26" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Acquaville Central" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="assets/icons/apple-touch-icon.png" />
+  <link rel="icon" type="image/png" href="assets/icons/icon-192.png" />
   <link rel="stylesheet" href="vendor/leaflet/leaflet.css" />
   <link rel="stylesheet" href="styles.css" />
 </head>
@@ -20,6 +28,10 @@
       <button class="primary-button" type="submit">Entrar na central</button>
       <button id="showActivationButton" class="link-button" type="button">Tenho um código de primeiro acesso</button>
       <div id="loginMessage" class="form-message" hidden></div>
+      <div class="install-box" hidden>
+        <button class="install-button" type="button">⬇ Baixar / instalar aplicativo</button>
+        <p class="install-hint"></p>
+      </div>
     </form>
     <form id="activationForm" class="login-card" hidden>
       <span class="eyebrow">PRIMEIRO ACESSO</span><h1>Ativar minha conta</h1>
@@ -408,6 +420,13 @@
   <script src="simulador.js"></script>
   <script src="simulador-admin.js"></script>
   <script src="relatorios-marca.js"></script>
+  <dialog id="installDialog" class="install-dialog">
+    <h2>Instalar o aplicativo</h2>
+    <p id="installInstructions"></p>
+    <button id="installDialogClose" class="primary-button full-width" type="button">Entendi</button>
+  </dialog>
+
   <script src="app.js"></script>
+  <script src="web.js"></script>
 </body>
 </html>
