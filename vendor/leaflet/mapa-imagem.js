@@ -19,9 +19,9 @@
   // extras (adicionarMarcador/redesenharMarcador/removerMarcador) pra o
   // editor manter o mapa em sincronia com a lista de pontos que ele edita.
   var CORES = {
-    disponivel: "#155c33",
+    disponivel: "#34d399",
     reservado: "#8f5c07",
-    vendido: "#7a1f18",
+    vendido: "#ff2222",
     bloqueado: "#1e3f66",
     nao_informado: "#4a4a4a"
   };

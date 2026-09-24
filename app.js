@@ -1168,9 +1168,9 @@
     function featureStyle(feature) {
         const lot = lots.get(`Q${feature.properties.quadra}-L${feature.properties.lote}`);
         const colors = {
-            disponivel: "#2f8a56",
+            disponivel: "#19e065",
             reservado: "#d59a22",
-            vendido: "#bd5147",
+            vendido: "#ff2222",
             bloqueado: "#477fa4",
             nao_informado: "#708189"
         };
@@ -1178,7 +1178,7 @@
             color: colors[lot?.status || "nao_informado"],
             weight: 2,
             fillColor: colors[lot?.status || "nao_informado"],
-            fillOpacity: .34
+            fillOpacity: .55
         };
     }
     function updateMapStyles() {
@@ -1186,9 +1186,9 @@
         lotLayers.forEach((layer, key) => {
             const lot = lots.get(key);
             const colors = {
-                disponivel: "#2f8a56",
+                disponivel: "#19e065",
                 reservado: "#d59a22",
-                vendido: "#bd5147",
+                vendido: "#ff2222",
                 bloqueado: "#477fa4",
                 nao_informado: "#708189"
             };
