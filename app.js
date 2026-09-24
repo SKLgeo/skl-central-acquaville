@@ -34,7 +34,7 @@
     // uma conta com acesso múltiplo veria os empreendimentos de outro cliente
     // dentro do app com a marca da Acquaville.
     const SLUGS_PERMITIDOS = [ "acquaville" ];
-    const APP_VERSION = "0.2.1";
+    const APP_VERSION = "0.3.0";
     if ($("appVersionText")) $("appVersionText").textContent = `v${APP_VERSION}`;
     const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
         auth: {
@@ -499,7 +499,7 @@
     let mapa3dInstance = null;
     let mapa3dDados = null;
     async function carregarMapa3D() {
-        const {data: mapa, error: mapaError} = await sb.from("mapas_3d").select("imagem_url, largura_px, altura_px, pontos").eq("empreendimento_id", empreendimentoId).eq("ativo", true).maybeSingle();
+        const {data: mapa, error: mapaError} = await sb.from("mapas_3d").select("id, imagem_url, largura_px, altura_px, pontos").eq("empreendimento_id", empreendimentoId).eq("ativo", true).maybeSingle();
         if (mapaError || !mapa) return null;
         const {data: lotesRows} = await sb.from("lotes").select("id, chave, status").eq("empreendimento_id", empreendimentoId);
         const chavePorId = new Map;
@@ -534,17 +534,263 @@
                 if (!chave) return;
                 fecharMapa3D();
                 openLot(chave);
+            },
+            onAbrirInformativo(ponto) {
+                mostrarPontoInformativo(ponto);
             }
         });
+        $("editarMapaButton").hidden = !podeEditarMapa();
         $("mapa3dLoading").hidden = true;
     }
+    function mostrarPontoInformativo(ponto) {
+        const dialog = $("pontoInfoDialog");
+        if (!dialog) return;
+        $("pontoInfoTitulo").textContent = ponto.titulo || "Ponto de interesse";
+        const img = $("pontoInfoImagem");
+        if (ponto.imagem_url) {
+            img.src = ponto.imagem_url;
+            img.hidden = false;
+        } else {
+            img.hidden = true;
+        }
+        dialog.showModal();
+    }
     function fecharMapa3D() {
+        if (modoEdicaoMapa && editorSujo && !confirm("Existem alterações não salvas no mapa. Fechar mesmo assim?")) return;
         $("mapa3dOverlay").hidden = true;
         if (mapa3dInstance) {
             mapa3dInstance.destruir();
             mapa3dInstance = null;
         }
+        modoEdicaoMapa = false;
+        $("editorMapaPainel").hidden = true;
+        $("mapa3dLegend").hidden = false;
     }
+
+    // --- Editor do mapa interativo (só Central Windows / Electron, só administrador) ---
+    // "a central não define onde clicar eu que faço" — pedido explicito do
+    // Yuri pra poder posicionar/editar os pontos do mapa artistico direto
+    // pelo programa, sem depender de mim rodar SQL a cada ajuste. Não
+    // aparece no app Android nem no link web (gate por navigator.userAgent).
+    const isElectronApp = /Electron\//.test(navigator.userAgent);
+    let modoEdicaoMapa = false;
+    let editorPontos = [];
+    let editorSelecionado = null;
+    let editorSujo = false;
+    function podeEditarMapa() {
+        return isElectronApp && currentUser && currentUser.papel === "administrador";
+    }
+    function entrarModoEdicaoMapa() {
+        if (!mapa3dDados) return;
+        modoEdicaoMapa = true;
+        editorPontos = (mapa3dDados.pontos || []).map(p => ({...p}));
+        editorSelecionado = null;
+        editorSujo = false;
+        $("mapa3dHeadingText").textContent = "Clique pra criar · arraste pra mover · clique num ponto pra editar";
+        $("mapa3dEyebrow").textContent = "EDITANDO O MAPA";
+        $("mapa3dLegend").hidden = true;
+        $("editarMapaButton").hidden = true;
+        $("editorMapaPainel").hidden = false;
+        $("editorMapaForm").hidden = true;
+        $("editorMapaVazio").hidden = false;
+        atualizarBotaoSalvarMapa();
+        if (mapa3dInstance) mapa3dInstance.destruir();
+        mapa3dInstance = window.SKLMapaImagem.init($("mapa3dContainer"), {
+            imagemUrl: mapa3dDados.imagem_url,
+            larguraPx: mapa3dDados.largura_px,
+            alturaPx: mapa3dDados.altura_px,
+            pontos: editorPontos,
+            statusPorId: mapa3dDados.statusPorId,
+            editavel: true,
+            onEditarPonto(ponto) {
+                editorSelecionarPonto(ponto);
+            },
+            onMoverPonto(ponto, x, y) {
+                ponto.x = x;
+                ponto.y = y;
+                editorMarcarSujo();
+                if (editorSelecionado === ponto) editorAtualizarCoords(ponto);
+            },
+            onCriarPonto(x, y) {
+                const novo = {
+                    tipo: "lote",
+                    lote_id: null,
+                    x: x,
+                    y: y
+                };
+                editorPontos.push(novo);
+                mapa3dInstance.adicionarMarcador(novo);
+                editorMarcarSujo();
+                editorSelecionarPonto(novo);
+            }
+        });
+    }
+    function montarSelectLotesEditor() {
+        const usados = new Set(editorPontos.filter(p => p.tipo !== "informativo" && p.lote_id).map(p => p.lote_id));
+        const linhas = [...lots.values()].sort((a, b) => Number(a.quadra) - Number(b.quadra) || Number(a.lote) - Number(b.lote));
+        $("editorLoteSelect").innerHTML = linhas.map(l => {
+            const jaTemPonto = usados.has(l.id) && (!editorSelecionado || editorSelecionado.lote_id !== l.id);
+            return `<option value="${l.id}">Quadra ${l.quadra} · Lote ${l.lote}${jaTemPonto ? " (já tem ponto)" : ""}</option>`;
+        }).join("");
+    }
+    function editorSelecionarPonto(ponto) {
+        editorSelecionado = ponto;
+        $("editorMapaVazio").hidden = true;
+        $("editorMapaForm").hidden = false;
+        $("editorMapaMsg").textContent = "";
+        editorSetTipoUI(ponto.tipo === "informativo" ? "informativo" : "lote");
+        montarSelectLotesEditor();
+        if (ponto.tipo !== "informativo" && ponto.lote_id) $("editorLoteSelect").value = ponto.lote_id;
+        $("editorInfoTituloInput").value = ponto.titulo || "";
+        if (ponto.imagem_url) {
+            $("editorInfoFoto").src = ponto.imagem_url;
+            $("editorInfoFoto").hidden = false;
+        } else {
+            $("editorInfoFoto").hidden = true;
+        }
+        editorAtualizarCoords(ponto);
+        mapa3dInstance.destacarMarcador(ponto);
+    }
+    function editorAtualizarCoords(ponto) {
+        $("editorMapaCoords").textContent = `x: ${ponto.x}, y: ${ponto.y}`;
+    }
+    function editorSetTipoUI(tipo) {
+        $("editorTipoLoteButton").classList.toggle("ativo", tipo === "lote");
+        $("editorTipoInfoButton").classList.toggle("ativo", tipo === "informativo");
+        $("editorCampoLote").style.display = tipo === "lote" ? "block" : "none";
+        $("editorCampoInfo").style.display = tipo === "informativo" ? "block" : "none";
+    }
+    function editorMarcarSujo() {
+        editorSujo = true;
+        atualizarBotaoSalvarMapa();
+    }
+    function atualizarBotaoSalvarMapa() {
+        $("editorSalvarButton").disabled = !editorSujo;
+        $("editorSalvarStatus").textContent = editorSujo ? "Alterações não salvas" : "Sem alterações";
+        $("editorSalvarStatus").className = "editor-mapa-status" + (editorSujo ? " dirty" : "");
+    }
+    async function editorSalvarTudo() {
+        $("editorSalvarButton").disabled = true;
+        $("editorSalvarStatus").textContent = "Salvando...";
+        $("editorSalvarStatus").className = "editor-mapa-status";
+        const payload = editorPontos.map(p => {
+            if (p.tipo === "informativo") {
+                return {
+                    tipo: "informativo",
+                    id: p.id || ("info-" + Date.now() + "-" + Math.random().toString(36).slice(2)),
+                    titulo: p.titulo || "Ponto de interesse",
+                    imagem_url: p.imagem_url || null,
+                    x: p.x,
+                    y: p.y
+                };
+            }
+            return {
+                tipo: "lote",
+                lote_id: p.lote_id,
+                x: p.x,
+                y: p.y
+            };
+        }).filter(p => p.tipo === "informativo" || p.lote_id);
+        const {error: error} = await sb.from("mapas_3d").update({pontos: payload}).eq("id", mapa3dDados.id);
+        if (error) {
+            editorSujo = true;
+            atualizarBotaoSalvarMapa();
+            $("editorSalvarStatus").textContent = "Erro ao salvar";
+            $("editorSalvarStatus").className = "editor-mapa-status dirty";
+            toast("Erro ao salvar o mapa: " + error.message);
+            return;
+        }
+        mapa3dDados.pontos = payload;
+        editorSujo = false;
+        atualizarBotaoSalvarMapa();
+        $("editorSalvarStatus").textContent = "Tudo salvo";
+        $("editorSalvarStatus").className = "editor-mapa-status saved";
+    }
+    function sairModoEdicaoMapa() {
+        if (editorSujo && !confirm("Existem alterações não salvas. Sair mesmo assim?")) return;
+        modoEdicaoMapa = false;
+        editorSelecionado = null;
+        $("editorMapaPainel").hidden = true;
+        $("mapa3dLegend").hidden = false;
+        $("editarMapaButton").hidden = !podeEditarMapa();
+        $("mapa3dHeadingText").textContent = "Toque em um lote para ver detalhes";
+        $("mapa3dEyebrow").textContent = "MAPA INTERATIVO";
+        if (mapa3dInstance) mapa3dInstance.destruir();
+        mapa3dInstance = window.SKLMapaImagem.init($("mapa3dContainer"), {
+            imagemUrl: mapa3dDados.imagem_url,
+            larguraPx: mapa3dDados.largura_px,
+            alturaPx: mapa3dDados.altura_px,
+            pontos: mapa3dDados.pontos,
+            statusPorId: mapa3dDados.statusPorId,
+            onSelecionar(loteId) {
+                const chave = mapa3dDados.chavePorId.get(loteId);
+                if (!chave) return;
+                fecharMapa3D();
+                openLot(chave);
+            },
+            onAbrirInformativo(ponto) {
+                mostrarPontoInformativo(ponto);
+            }
+        });
+    }
+    $("editarMapaButton").addEventListener("click", entrarModoEdicaoMapa);
+    $("editorMapaSairButton").addEventListener("click", sairModoEdicaoMapa);
+    $("editorTipoLoteButton").addEventListener("click", () => {
+        if (!editorSelecionado) return;
+        editorSelecionado.tipo = "lote";
+        editorSetTipoUI("lote");
+        mapa3dInstance.redesenharMarcador(editorSelecionado);
+        editorMarcarSujo();
+    });
+    $("editorTipoInfoButton").addEventListener("click", () => {
+        if (!editorSelecionado) return;
+        editorSelecionado.tipo = "informativo";
+        editorSetTipoUI("informativo");
+        mapa3dInstance.redesenharMarcador(editorSelecionado);
+        editorMarcarSujo();
+    });
+    $("editorLoteSelect").addEventListener("change", () => {
+        if (!editorSelecionado) return;
+        editorSelecionado.lote_id = $("editorLoteSelect").value;
+        mapa3dInstance.redesenharMarcador(editorSelecionado);
+        montarSelectLotesEditor();
+        $("editorLoteSelect").value = editorSelecionado.lote_id;
+        editorMarcarSujo();
+    });
+    $("editorInfoTituloInput").addEventListener("input", () => {
+        if (!editorSelecionado) return;
+        editorSelecionado.titulo = $("editorInfoTituloInput").value;
+        editorMarcarSujo();
+    });
+    $("editorInfoFotoInput").addEventListener("change", async () => {
+        if (!editorSelecionado) return;
+        const arquivo = $("editorInfoFotoInput").files[0];
+        if (!arquivo) return;
+        $("editorMapaMsg").textContent = "Enviando foto...";
+        const caminho = `acquaville/pontos/${Date.now()}_${arquivo.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+        const {error: uploadError} = await sb.storage.from("mapas3d").upload(caminho, arquivo, {upsert: true});
+        if (uploadError) {
+            $("editorMapaMsg").textContent = "Falha ao enviar: " + uploadError.message;
+            return;
+        }
+        const {data: urlData} = sb.storage.from("mapas3d").getPublicUrl(caminho);
+        editorSelecionado.imagem_url = urlData.publicUrl;
+        $("editorInfoFoto").src = editorSelecionado.imagem_url;
+        $("editorInfoFoto").hidden = false;
+        $("editorMapaMsg").textContent = "Foto enviada.";
+        editorMarcarSujo();
+    });
+    $("editorExcluirButton").addEventListener("click", () => {
+        if (!editorSelecionado) return;
+        if (!confirm("Excluir este ponto do mapa?")) return;
+        mapa3dInstance.removerMarcador(editorSelecionado);
+        editorPontos = editorPontos.filter(p => p !== editorSelecionado);
+        editorSelecionado = null;
+        $("editorMapaForm").hidden = true;
+        $("editorMapaVazio").hidden = false;
+        editorMarcarSujo();
+    });
+    $("editorSalvarButton").addEventListener("click", editorSalvarTudo);
     function logout() {
         sb.auth.signOut();
         currentUser = null;

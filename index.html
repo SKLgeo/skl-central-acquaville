@@ -329,18 +329,51 @@
 
   <div id="mapa3dOverlay" class="mapa3d-overlay" hidden>
     <div class="mapa3d-topbar">
-      <div class="mapa3d-heading"><span class="eyebrow">MAPA INTERATIVO</span><h2>Toque em um lote para ver detalhes</h2></div>
+      <div class="mapa3d-heading"><span class="eyebrow" id="mapa3dEyebrow">MAPA INTERATIVO</span><h2 id="mapa3dHeadingText">Toque em um lote para ver detalhes</h2></div>
+      <button id="editarMapaButton" class="close-button" type="button" aria-label="Editar mapa" hidden style="width:auto;padding:0 14px;border-radius:19px;font-size:12px;font-weight:800">Editar mapa</button>
       <button id="mapa3dCloseButton" class="close-button" type="button" aria-label="Fechar planta 3D">×</button>
     </div>
     <div id="mapa3dContainer" class="mapa3d-container"></div>
     <div id="mapa3dLoading" class="mapa3d-loading"><span class="mapa3d-spinner"></span>Carregando mapa…</div>
-    <div class="mapa3d-legend">
+    <div class="mapa3d-legend" id="mapa3dLegend">
       <span><i style="background:#2f8a56"></i>Disponível</span>
       <span><i style="background:#d59a22"></i>Reservado</span>
       <span><i style="background:#bd5147"></i>Vendido</span>
       <span><i style="background:#477fa4"></i>Bloqueado</span>
+      <span><i style="background:#c9a063"></i>Ponto de interesse</span>
+    </div>
+
+    <div id="editorMapaPainel" class="editor-mapa-painel" hidden>
+      <button id="editorMapaSairButton" class="close-button" type="button" aria-label="Sair do modo edição" style="align-self:flex-end;width:auto;padding:0 14px;border-radius:19px;font-size:12px">Sair da edição</button>
+      <p class="editor-mapa-dica">Clique no mapa vazio pra criar um ponto novo · arraste um ponto pra mover · clique num ponto pra editar.</p>
+      <div id="editorMapaVazio" class="editor-mapa-vazio">Nenhum ponto selecionado.</div>
+      <div id="editorMapaForm" hidden>
+        <div class="coords" id="editorMapaCoords">x: 0, y: 0</div>
+        <label>Tipo</label>
+        <div class="tipo-toggle">
+          <button type="button" id="editorTipoLoteButton" class="ativo">Lote</button>
+          <button type="button" id="editorTipoInfoButton">Informativo</button>
+        </div>
+        <div id="editorCampoLote">
+          <label>Lote vinculado</label>
+          <select id="editorLoteSelect"></select>
+        </div>
+        <div id="editorCampoInfo" style="display:none">
+          <label>Título (ex.: "Quiosque da Churrasqueira")</label>
+          <input id="editorInfoTituloInput" type="text" />
+          <label>Foto</label>
+          <input id="editorInfoFotoInput" type="file" accept="image/*" />
+          <img id="editorInfoFoto" hidden />
+        </div>
+        <div id="editorMapaMsg"></div>
+        <button class="danger-button" id="editorExcluirButton" type="button">Excluir este ponto</button>
+      </div>
+      <button id="editorSalvarButton" class="primary-button" type="button" disabled>Salvar tudo</button>
+      <div id="editorSalvarStatus" class="editor-mapa-status">Sem alterações</div>
     </div>
   </div>
+
+  <dialog id="pontoInfoDialog"><form method="dialog" class="dialog-card"><button class="dialog-close" type="button" value="cancel">×</button><span class="eyebrow">PONTO DE INTERESSE</span><h2 id="pontoInfoTitulo">Ponto de interesse</h2><img id="pontoInfoImagem" alt="" style="width:100%;border-radius:12px;margin-top:10px" /></form></dialog>
 
   <div id="toast" class="toast" hidden></div>
   <script src="vendor/leaflet/leaflet.js"></script>
