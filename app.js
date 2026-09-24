@@ -34,7 +34,7 @@
     // uma conta com acesso múltiplo veria os empreendimentos de outro cliente
     // dentro do app com a marca da Acquaville.
     const SLUGS_PERMITIDOS = [ "acquaville" ];
-    const APP_VERSION = "0.3.1";
+    const APP_VERSION = "0.3.2";
     if ($("appVersionText")) $("appVersionText").textContent = `v${APP_VERSION}`;
     const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
         auth: {
@@ -566,6 +566,7 @@
         $("editorMapaPainel").hidden = true;
         $("mapa3dLegend").hidden = false;
         $("mapa3dContainer").classList.remove("com-painel-editor");
+        mapa3dDados = null;
     }
 
     // --- Editor do mapa interativo (só Central Windows / Electron, só administrador) ---
