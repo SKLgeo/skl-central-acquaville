@@ -185,8 +185,15 @@ dialog.sa-dlg::backdrop{background:rgba(7,31,59,.6)}
 
     // ------------------------------------------------------------------ render
     function condResumo(c) {
-        const taxa = c.taxa_aa > 0 ? `${fmtNum(c.taxa_aa)}% a.a.${c.tipo_taxa === "efetiva" ? " (efetiva)" : ""}${c.indexador !== "nenhum" ? " + " + IDX[c.indexador] : ""}` : `sem juros${c.indexador !== "nenhum" ? " · " + IDX[c.indexador] : ""}`;
-        return `${TIPOS[c.tipo] || c.tipo}${c.banco ? " · " + esc(c.banco) : ""} · ${c.sistema === "sac" ? "SAC" : "Price"} · ${taxa} · entrada mín. ${fmtNum(Math.max(c.entrada_min_pct, 100 - c.financiavel_max_pct), 0)}% · ${c.prazo_min_meses}–${c.prazo_max_meses} meses`;
+        let taxa;
+        if (Array.isArray(c.faixas_prazo) && c.faixas_prazo.length) {
+            const ord = c.faixas_prazo.slice().sort((a, b) => a.prazo_max_meses - b.prazo_max_meses);
+            let de = 1;
+            taxa = ord.map((f) => { const t = `${de > 1 ? `${de}–` : "até "}${f.prazo_max_meses}x ${f.taxa_mensal_pct > 0 ? fmtNum(f.taxa_mensal_pct) + "% a.m." : "sem juros"}`; de = f.prazo_max_meses + 1; return t; }).join(", ");
+        } else {
+            taxa = c.taxa_aa > 0 ? `${fmtNum(c.taxa_aa)}% a.a.${c.tipo_taxa === "efetiva" ? " (efetiva)" : ""}${c.indexador !== "nenhum" ? " + " + IDX[c.indexador] : ""}` : `sem juros${c.indexador !== "nenhum" ? " · " + IDX[c.indexador] : ""}`;
+        }
+        return `${TIPOS[c.tipo] || c.tipo}${c.banco ? " · " + esc(c.banco) : ""} · ${c.sistema === "sac" ? "SAC" : "Price"} · ${taxa} · entrada mín. ${fmtNum(Math.max(c.entrada_min_pct, 100 - c.financiavel_max_pct), 0)}%${c.permite_balao ? ` · balão opcional até ${c.balao_max_meses} meses` : ""} · ${c.prazo_min_meses}–${c.prazo_max_meses} meses`;
     }
     function render() {
         const box = A.box; if (!box) return;
@@ -264,7 +271,8 @@ Content-Type: application/json
         A.editandoId = cond ? cond.id : null;
         let d = $("#saCondDialog");
         if (!d) { d = document.createElement("dialog"); d.id = "saCondDialog"; d.className = "sa-dlg"; document.body.appendChild(d); }
-        const c = cond || { nome: "", tipo: "financiamento_bancario", banco: "", sistema: "price", taxa_aa: 11.49, tipo_taxa: "nominal", indexador: "TR", entrada_min_pct: 20, financiavel_max_pct: 80, prazo_min_meses: 60, prazo_max_meses: 420, opcoes_prazo: [120, 180, 240, 300, 360, 420], seguro_mip_pct_mes: 0.03, seguro_dfi_pct_mes: 0.01, tarifa_mensal: 25, vigencia_ate: "", fonte: "", observacao: "", ativo: true };
+        const c = cond || { nome: "", tipo: "financiamento_bancario", banco: "", sistema: "price", taxa_aa: 11.49, tipo_taxa: "nominal", indexador: "TR", entrada_min_pct: 20, financiavel_max_pct: 80, prazo_min_meses: 60, prazo_max_meses: 420, opcoes_prazo: [120, 180, 240, 300, 360, 420], seguro_mip_pct_mes: 0.03, seguro_dfi_pct_mes: 0.01, tarifa_mensal: 25, vigencia_ate: "", fonte: "", observacao: "", ativo: true, permite_balao: false, balao_max_meses: 48, faixas_prazo: null };
+        const faixasTexto = (Array.isArray(c.faixas_prazo) ? c.faixas_prazo : []).map((f) => `${f.prazo_max_meses}:${f.taxa_mensal_pct}`).join("\n");
         const sel = (id, opts, v) => `<select id="${id}">${opts.map(([k, t]) => `<option value="${k}"${k === v ? " selected" : ""}>${t}</option>`).join("")}</select>`;
         d.innerHTML = `<div class="sa-cond"><button type="button" class="dialog-close" data-x="1" style="float:right">×</button><span class="eyebrow">SIMULADOR</span><h2>${cond ? "Editar condição" : "Nova condição"}</h2>
 <div class="sa-grid">
@@ -280,6 +288,9 @@ Content-Type: application/json
  <label>Prazo mínimo (meses)<input id="scPmin" inputmode="numeric" value="${esc(c.prazo_min_meses)}"></label>
  <label>Prazo máximo (meses)<input id="scPmax" inputmode="numeric" value="${esc(c.prazo_max_meses)}"></label>
  <label style="grid-column:1/-1">Opções de prazo mostradas ao corretor (meses, separadas por vírgula)<input id="scOpcoes" value="${esc((c.opcoes_prazo || []).join(", "))}"></label>
+ <label style="grid-column:1/-1">Faixas de taxa por prazo (opcional — deixe em branco para usar só a taxa acima). Uma por linha: <code>até quantos meses : juros ao mês (%)</code>. Ex.: até 60x sem juros e de 61 a 192x a 0,8% a.m. = <code>60:0</code> na 1ª linha e <code>192:0.8</code> na 2ª.<textarea id="scFaixas" rows="2" placeholder="60:0&#10;192:0.8">${esc(faixasTexto)}</textarea></label>
+ <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="scBalao" ${c.permite_balao ? "checked" : ""} style="width:auto;margin:0"> Permite balão (o corretor escolhe quantas parcelas e o intervalo ao simular)</label>
+ <label>Balão: até quantos meses no total<input id="scBalaoMax" inputmode="numeric" value="${esc(c.balao_max_meses || 48)}"></label>
  <label>Seguro MIP (% ao mês sobre o saldo)<input id="scMip" inputmode="decimal" value="${esc(fmtNum(c.seguro_mip_pct_mes, 3))}"></label>
  <label>Seguro DFI (% ao mês sobre o imóvel)<input id="scDfi" inputmode="decimal" value="${esc(fmtNum(c.seguro_dfi_pct_mes, 3))}"></label>
  <label>Tarifa mensal (R$)<input id="scTarifa" inputmode="decimal" value="${esc(fmtNum(c.tarifa_mensal))}"></label>
@@ -295,7 +306,11 @@ Content-Type: application/json
             if (a.dataset.x === "1" || a.dataset.x === "fechar") return d.close();
             if (a.dataset.x === "salvar") {
                 const g = (id) => $(id, d).value;
-                const dados = { nome: g("#scNome"), tipo: g("#scTipo"), banco: g("#scBanco"), sistema: g("#scSistema"), taxa_aa: num(g("#scTaxa")), tipo_taxa: g("#scTipoTaxa"), indexador: g("#scIdx"), entrada_min_pct: num(g("#scEntrada")), financiavel_max_pct: num(g("#scFin")), prazo_min_meses: num(g("#scPmin")), prazo_max_meses: num(g("#scPmax")), opcoes_prazo: g("#scOpcoes").split(/[^\d]+/).filter(Boolean).map(Number), seguro_mip_pct_mes: num(g("#scMip")), seguro_dfi_pct_mes: num(g("#scDfi")), tarifa_mensal: num(g("#scTarifa")), vigencia_ate: g("#scVig") || null, fonte: g("#scFonte"), observacao: g("#scObs"), ativo: $("#scAtivo", d).checked };
+                const faixas = g("#scFaixas").split(/\r?\n/).map((l) => l.trim()).filter(Boolean).map((l) => {
+                    const m = l.match(/^(\d+)\s*:\s*([\d.,]+)$/); if (!m) return null;
+                    return { prazo_max_meses: Number(m[1]), taxa_mensal_pct: Number(m[2].replace(",", ".")) };
+                }).filter(Boolean);
+                const dados = { nome: g("#scNome"), tipo: g("#scTipo"), banco: g("#scBanco"), sistema: g("#scSistema"), taxa_aa: num(g("#scTaxa")), tipo_taxa: g("#scTipoTaxa"), indexador: g("#scIdx"), entrada_min_pct: num(g("#scEntrada")), financiavel_max_pct: num(g("#scFin")), prazo_min_meses: num(g("#scPmin")), prazo_max_meses: num(g("#scPmax")), opcoes_prazo: g("#scOpcoes").split(/[^\d]+/).filter(Boolean).map(Number), seguro_mip_pct_mes: num(g("#scMip")), seguro_dfi_pct_mes: num(g("#scDfi")), tarifa_mensal: num(g("#scTarifa")), vigencia_ate: g("#scVig") || null, fonte: g("#scFonte"), observacao: g("#scObs"), ativo: $("#scAtivo", d).checked, permite_balao: $("#scBalao", d).checked, balao_max_meses: num(g("#scBalaoMax")), faixas_prazo: faixas.length ? faixas : null };
                 Object.keys(dados).forEach((k) => { if (typeof dados[k] === "number" && Number.isNaN(dados[k])) dados[k] = null; });
                 try { await rpc("simulador_salvar_condicao", { p_empreendimento_id: A.empId, p_id: A.editandoId, p_dados: dados }); d.close(); toast("Condição salva."); await recarregarTudo(); }
                 catch (e) { const m = $("#scMsg", d); m.textContent = e.message; m.hidden = false; }

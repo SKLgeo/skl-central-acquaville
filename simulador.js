@@ -47,25 +47,46 @@
         if (!(aa > 0)) return 0;
         return cond.tipo_taxa === "efetiva" ? Math.pow(1 + aa, 1 / 12) - 1 : aa / 12;
     }
+    // condições com faixas_prazo (ex.: até 60x sem juros, de 61 a 192x Price 0,8% a.m.) usam
+    // a taxa da primeira faixa cujo prazo_max_meses cobre o prazo escolhido; sem faixas, usa taxa_aa normal.
+    function taxaMensalPorPrazo(cond, prazo) {
+        if (Array.isArray(cond.faixas_prazo) && cond.faixas_prazo.length) {
+            const ordenadas = cond.faixas_prazo.slice().sort((a, b) => a.prazo_max_meses - b.prazo_max_meses);
+            const faixa = ordenadas.find((f) => prazo <= f.prazo_max_meses) || ordenadas[ordenadas.length - 1];
+            return (Number(faixa.taxa_mensal_pct) || 0) / 100;
+        }
+        return taxaMensal(cond);
+    }
     function entradaMinimaPct(cond) {
         return Math.max(Number(cond.entrada_min_pct) || 0, 100 - (Number(cond.financiavel_max_pct) || 100));
     }
-    // p = { valor, entradaValor, prazo }; cond = linha de simulador_condicoes; cfg = simulador_config
+    // baloes: [{mes, valor}] — parcelas extras que abatem o valor a financiar antes da Price/SAC
+    // (o corretor escolhe quantidade e intervalo; cada balão cai no mês = intervalo * k).
+    function somaBaloes(baloes) { return (Array.isArray(baloes) ? baloes : []).reduce((s, b) => s + (Number(b.valor) || 0), 0); }
+    function maiorMesBalao(baloes) { return (Array.isArray(baloes) ? baloes : []).reduce((m, b) => Math.max(m, Number(b.mes) || 0), 0); }
+    // p = { valor, entradaValor, prazo, baloes }; cond = linha de simulador_condicoes; cfg = simulador_config
     function calcular(p, cond, cfg) {
         const valor = Number(p.valor) || 0;
         const entradaValor = Math.max(0, Number(p.entradaValor) || 0);
         const prazo = Math.round(Number(p.prazo) || 0);
-        const pv = valor - entradaValor;
+        const baloes = cond.permite_balao ? (Array.isArray(p.baloes) ? p.baloes : []) : [];
+        const totalBaloes = somaBaloes(baloes);
+        const pv = valor - entradaValor - totalBaloes;
         const entradaPct = valor > 0 ? (entradaValor / valor) * 100 : 0;
         const minPct = entradaMinimaPct(cond);
         const erros = [];
         if (valor <= 0) erros.push("Informe o valor do imóvel.");
         else if (entradaPct + 1e-9 < minPct) erros.push(`Entrada mínima desta condição: ${pctTxt(minPct)} (${brl((valor * minPct) / 100)}).`);
-        if (valor > 0 && pv <= 0) erros.push("A entrada precisa ser menor que o valor do imóvel.");
+        if (valor > 0 && pv <= 0) erros.push(totalBaloes > 0 ? "A entrada mais os balões não pode ultrapassar o valor do imóvel." : "A entrada precisa ser menor que o valor do imóvel.");
         if (prazo < cond.prazo_min_meses || prazo > cond.prazo_max_meses) erros.push(`Prazo desta condição: de ${cond.prazo_min_meses} a ${cond.prazo_max_meses} meses.`);
-        if (erros.length) return { ok: false, erros, entradaPct, entradaMinPct: minPct, valorFinanciado: Math.max(pv, 0) };
+        if (baloes.length) {
+            const maiorMes = maiorMesBalao(baloes);
+            if (maiorMes > cond.balao_max_meses) erros.push(`Os balões desta condição podem ir até ${cond.balao_max_meses} meses.`);
+            else if (maiorMes > prazo) erros.push(`Os balões vão até o mês ${maiorMes}, mas o prazo escolhido é de ${prazo} meses — aumente o prazo ou reduza os balões.`);
+        }
+        if (erros.length) return { ok: false, erros, entradaPct, entradaMinPct: minPct, valorFinanciado: Math.max(pv, 0), baloes, totalBaloes };
 
-        const i = taxaMensal(cond);
+        const i = taxaMensalPorPrazo(cond, prazo);
         const mip = (Number(cond.seguro_mip_pct_mes) || 0) / 100;
         const dfi = (Number(cond.seguro_dfi_pct_mes) || 0) / 100;
         const tarifa = Number(cond.tarifa_mensal) || 0;
@@ -97,16 +118,22 @@
         const comprometimento = Number(cfg && cfg.renda_comprometimento_pct) || 30;
         return {
             ok: true, erros: [], valor, entradaValor, entradaPct, entradaMinPct: minPct, prazo, valorFinanciado: pv, taxaMensal: i,
-            parcelaInicial: primeira, parcelaFinal: ultima, totalParcelas, totalJuros, totalSeguros, totalTarifas,
-            totalPago: entradaValor + totalParcelas, cetAa: cetAa == null ? null : cetAa * 100, rendaMinima: primeira / (comprometimento / 100), comprometimento, tabela
+            parcelaInicial: primeira, parcelaFinal: ultima, totalParcelas, totalJuros, totalSeguros, totalTarifas, baloes, totalBaloes,
+            totalPago: entradaValor + totalBaloes + totalParcelas, cetAa: cetAa == null ? null : cetAa * 100, rendaMinima: primeira / (comprometimento / 100), comprometimento, tabela
         };
     }
 
     function montarSnapshot(res, cond, extra) {
+        // com faixas_prazo, a taxa realmente aplicada depende do prazo escolhido (ex.: 0% até 60x,
+        // 0,8% a.m. de 61 a 192x) — mostra a taxa EFETIVA usada no cálculo, não a taxa "base" da condição.
+        const temFaixas = Array.isArray(cond.faixas_prazo) && cond.faixas_prazo.length;
+        const taxaAaExibida = temFaixas ? arred((Number(res.taxaMensal) || 0) * 12 * 100) : Number(cond.taxa_aa);
+        const tipoTaxaExibida = temFaixas ? "nominal" : cond.tipo_taxa;
         return {
             versao: 1, rotulo: (extra && extra.rotulo) || null, condicao_id: cond.id || null, condicao_nome: cond.nome, tipo: cond.tipo, banco: cond.banco || null,
-            sistema: cond.sistema, taxa_aa: Number(cond.taxa_aa), tipo_taxa: cond.tipo_taxa, indexador: cond.indexador,
+            sistema: cond.sistema, taxa_aa: taxaAaExibida, tipo_taxa: tipoTaxaExibida, indexador: cond.indexador,
             valor_imovel: arred(res.valor), entrada_valor: arred(res.entradaValor), entrada_pct: arred(res.entradaPct), prazo_meses: res.prazo,
+            baloes: (res.baloes || []).map((b) => ({ mes: b.mes, valor: arred(b.valor) })), balao_total: arred(res.totalBaloes || 0),
             valor_financiado: arred(res.valorFinanciado), parcela_inicial: arred(res.parcelaInicial), parcela_final: arred(res.parcelaFinal),
             total_parcelas: arred(res.totalParcelas), total_pago: arred(res.totalPago), total_juros: arred(res.totalJuros),
             total_seguros_tarifas: arred(res.totalSeguros + res.totalTarifas), cet_aa: res.cetAa == null ? null : arred(res.cetAa),
@@ -114,11 +141,16 @@
         };
     }
     const IDX = { TR: "TR", IPCA: "IPCA", INCC: "INCC", IGPM: "IGP-M", nenhum: "" };
+    function balaoTexto(s) {
+        if (!s || !Array.isArray(s.baloes) || !s.baloes.length) return "";
+        const intervalo = s.baloes.length > 1 ? s.baloes[1].mes - s.baloes[0].mes : s.baloes[0].mes;
+        return ` · Balão ${s.baloes.length}x de ${brl(s.baloes[0].valor)} a cada ${intervalo} meses (total ${brl(s.balao_total)})`;
+    }
     function resumoTexto(s) {
         if (!s) return "";
         const taxa = s.taxa_aa > 0 ? ` · ${fmtNum(s.taxa_aa)}% a.a.${IDX[s.indexador] ? " + " + IDX[s.indexador] : ""}` : (IDX[s.indexador] ? ` · corrigido pelo ${IDX[s.indexador]}` : " · sem juros");
         const parc = s.sistema === "sac" && s.parcela_final < s.parcela_inicial - 0.005 ? `${s.prazo_meses}x de ${brl(s.parcela_inicial)} (decrescente)` : `${s.prazo_meses}x de ${brl(s.parcela_inicial)}`;
-        return `${s.condicao_nome}${taxa} · Entrada ${brl(s.entrada_valor)} (${pctTxt(s.entrada_pct)}) · ${parc}`;
+        return `${s.condicao_nome}${taxa} · Entrada ${brl(s.entrada_valor)} (${pctTxt(s.entrada_pct)})${balaoTexto(s)} · ${parc}`;
     }
     function resumoHtml(s) {
         if (!s) return "";
@@ -127,12 +159,18 @@
             ["Condição", `${esc(s.condicao_nome)}${s.banco ? ` <small>(${esc(s.banco)})</small>` : ""}`],
             ["Sistema / taxa", `${s.sistema === "sac" ? "SAC" : "Price"}${s.taxa_aa > 0 ? ` · ${fmtNum(s.taxa_aa)}% a.a.` : " · sem juros"}${IDX[s.indexador] ? ` · ${IDX[s.indexador]}` : ""}`],
             ["Valor do imóvel", brl(s.valor_imovel)],
-            ["Entrada", `${brl(s.entrada_valor)} (${pctTxt(s.entrada_pct)})`],
+            ["Entrada", `${brl(s.entrada_valor)} (${pctTxt(s.entrada_pct)})`]
+        ];
+        if (Array.isArray(s.baloes) && s.baloes.length) {
+            const intervalo = s.baloes.length > 1 ? s.baloes[1].mes - s.baloes[0].mes : s.baloes[0].mes;
+            linhas.push(["Balão", `${s.baloes.length}x de ${brl(s.baloes[0].valor)} a cada ${intervalo} meses (total ${brl(s.balao_total)})`]);
+        }
+        linhas.push(
             ["Financiado", brl(s.valor_financiado)],
             ["Prazo", `${s.prazo_meses} meses`],
             ["Parcela", s.sistema === "sac" && s.parcela_final < s.parcela_inicial - 0.005 ? `${brl(s.parcela_inicial)} → ${brl(s.parcela_final)}` : brl(s.parcela_inicial)],
             ["Total pago", brl(s.total_pago)]
-        ];
+        );
         return `<dl class="skl-sim-dl">${linhas.map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join("")}</dl>`;
     }
     function textoCompartilhar(s, rotulo) {
@@ -140,6 +178,10 @@
         l.push(`Simulação de financiamento${rotulo ? " — " + rotulo : ""}`);
         l.push(`Valor do imóvel: ${brl(s.valor_imovel)}`);
         l.push(`Entrada: ${brl(s.entrada_valor)} (${pctTxt(s.entrada_pct)})`);
+        if (Array.isArray(s.baloes) && s.baloes.length) {
+            const intervalo = s.baloes.length > 1 ? s.baloes[1].mes - s.baloes[0].mes : s.baloes[0].mes;
+            l.push(`Balão: ${s.baloes.length}x de ${brl(s.baloes[0].valor)} a cada ${intervalo} meses (total ${brl(s.balao_total)})`);
+        }
         l.push(`Valor financiado: ${brl(s.valor_financiado)}`);
         l.push(`Condição: ${s.condicao_nome}${s.banco ? " (" + s.banco + ")" : ""}`);
         l.push(`Sistema: ${s.sistema === "sac" ? "SAC (parcelas decrescentes)" : "Price (parcelas fixas)"}${s.taxa_aa > 0 ? " · " + fmtNum(s.taxa_aa) + "% a.a." : " · sem juros"}${IDX[s.indexador] ? " + " + IDX[s.indexador] : ""}`);
@@ -256,6 +298,26 @@
   <div class="skl-sim-row"><div><label class="skl-l" for="sklSimEntradaValor">Valor da entrada</label><input type="text" id="sklSimEntradaValor" inputmode="decimal" autocomplete="off"></div>
   <div><label class="skl-l" for="sklSimEntradaPct">Entrada (%)</label><input type="text" id="sklSimEntradaPct" inputmode="decimal" autocomplete="off"></div></div>
   <p class="skl-sim-hint" id="sklSimEntradaHint"></p>
+  <div id="sklSimBalaoSec" hidden>
+    <h3>Balão (opcional)</h3>
+    <label style="display:flex;gap:8px;align-items:center;font-size:13px;font-weight:700;color:var(--muted,#66777c);cursor:pointer"><input type="checkbox" id="sklSimBalaoToggle" style="width:auto"> Incluir balão</label>
+    <div id="sklSimBalaoCampos" hidden>
+      <div class="skl-sim-row">
+        <div><label class="skl-l" for="sklSimBalaoQtd">Quantas parcelas de balão</label><input type="number" id="sklSimBalaoQtd" inputmode="numeric" min="1" max="12" value="1"></div>
+        <div><label class="skl-l" for="sklSimBalaoIntervalo">Intervalo entre balões (meses)</label><input type="number" id="sklSimBalaoIntervalo" inputmode="numeric" min="1" max="48" value="12"></div>
+      </div>
+      <div class="skl-sim-chips" id="sklSimBalaoIntervaloChips">
+        <button type="button" class="skl-sim-chip" data-intervalo="4">A cada 4 meses</button>
+        <button type="button" class="skl-sim-chip" data-intervalo="6">Semestral</button>
+        <button type="button" class="skl-sim-chip on" data-intervalo="12">Anual</button>
+      </div>
+      <div class="skl-sim-row">
+        <div><label class="skl-l" for="sklSimBalaoValor">Valor de cada balão</label><input type="text" id="sklSimBalaoValor" inputmode="decimal" autocomplete="off" placeholder="R$ 0,00"></div>
+        <div><label class="skl-l">Total dos balões</label><input type="text" id="sklSimBalaoTotal" disabled></div>
+      </div>
+      <p class="skl-sim-hint" id="sklSimBalaoHint"></p>
+    </div>
+  </div>
   <h3>3 · Número de parcelas</h3>
   <div class="skl-sim-chips" id="sklSimPrazoChips"></div>
   <div class="skl-sim-row"><div><label class="skl-l" for="sklSimPrazo">Outro prazo (meses)</label><input type="number" id="sklSimPrazo" inputmode="numeric" min="1" max="600"></div><div></div></div>
@@ -284,8 +346,39 @@
         $q("#sklSimEntradaValor", d).addEventListener("blur", (e) => { if (st.ctx) e.target.value = fmtNum(st.ctx.entradaValor); });
         $q("#sklSimEntradaPct", d).addEventListener("input", (e) => { const v = parseValor(e.target.value); const c = st.ctx; if (!c) return; c.entradaPct = v; c.entradaValor = arred((c.valor * v) / 100); pintarEntrada(true, true); pintar(); });
         $q("#sklSimPrazo", d).addEventListener("input", (e) => { const c = st.ctx; if (!c) return; c.prazo = Math.round(Number(e.target.value) || 0); pintarPrazo(true); pintar(); });
+        $q("#sklSimBalaoToggle", d).addEventListener("change", (e) => { $q("#sklSimBalaoCampos", d).hidden = !e.target.checked; atualizarBalaoTotal(); pintar(); });
+        $q("#sklSimBalaoQtd", d).addEventListener("input", () => { atualizarBalaoTotal(); pintar(); });
+        $q("#sklSimBalaoIntervalo", d).addEventListener("input", () => { marcarChipIntervalo(); atualizarBalaoTotal(); pintar(); });
+        $q("#sklSimBalaoIntervaloChips", d).querySelectorAll("[data-intervalo]").forEach((b) => b.addEventListener("click", () => { $q("#sklSimBalaoIntervalo", d).value = b.dataset.intervalo; marcarChipIntervalo(); atualizarBalaoTotal(); pintar(); }));
+        $q("#sklSimBalaoValor", d).addEventListener("input", (e) => { atualizarBalaoTotal(); pintar(); });
+        $q("#sklSimBalaoValor", d).addEventListener("blur", (e) => { const v = parseValor(e.target.value); e.target.value = v > 0 ? fmtNum(v) : ""; });
         st.dlg = d;
         return d;
+    }
+    function marcarChipIntervalo() {
+        const d = st.dlg, v = String(Math.round(Number($q("#sklSimBalaoIntervalo", d).value) || 0));
+        $q("#sklSimBalaoIntervaloChips", d).querySelectorAll("[data-intervalo]").forEach((b) => b.classList.toggle("on", b.dataset.intervalo === v));
+    }
+    function balaoParams() {
+        const d = st.dlg, cond = condAtual();
+        if (!cond || !cond.permite_balao) return [];
+        const toggle = $q("#sklSimBalaoToggle", d);
+        if (!toggle || !toggle.checked) return [];
+        const qtd = Math.max(1, Math.round(Number($q("#sklSimBalaoQtd", d).value) || 0));
+        const intervalo = Math.max(1, Math.round(Number($q("#sklSimBalaoIntervalo", d).value) || 0));
+        const valor = parseValor($q("#sklSimBalaoValor", d).value);
+        const lista = [];
+        for (let k = 1; k <= qtd; k++) lista.push({ mes: intervalo * k, valor });
+        return lista;
+    }
+    function atualizarBalaoTotal() {
+        const d = st.dlg, cond = condAtual();
+        if (!cond || !cond.permite_balao) return;
+        const lista = balaoParams();
+        const total = lista.reduce((s, b) => s + b.valor, 0);
+        $q("#sklSimBalaoTotal", d).value = lista.length ? brl(total) : "";
+        const maiorMes = lista.length ? Math.max(...lista.map((b) => b.mes)) : 0;
+        $q("#sklSimBalaoHint", d).textContent = lista.length ? `Balões até o mês ${maiorMes} de ${lista.length} parcela(s) (máximo desta condição: ${cond.balao_max_meses} meses).` : `Até ${cond.balao_max_meses} meses de balão nesta condição.`;
     }
 
     // ------------------------------------------------------------------ lógica do diálogo
@@ -309,7 +402,31 @@
             if (c.prazo < cond.prazo_min_meses) c.prazo = cond.prazo_min_meses;
             if (c.prazo > cond.prazo_max_meses) c.prazo = cond.prazo_max_meses;
         }
+        pintarBalaoSecao(cond, manter);
         pintarConds(); pintarEntrada(); pintarPrazo(); pintar();
+    }
+    // mostra/esconde a seção de balão conforme a condição escolhida; ao trocar de condição
+    // (manter=true vindo de um clique, não da abertura inicial) reseta o balão, já que o
+    // limite de meses pode ser diferente entre condições.
+    function pintarBalaoSecao(cond, manter) {
+        const d = st.dlg;
+        const sec = $q("#sklSimBalaoSec", d);
+        sec.hidden = !cond.permite_balao;
+        if (!cond.permite_balao) { $q("#sklSimBalaoToggle", d).checked = false; $q("#sklSimBalaoCampos", d).hidden = true; return; }
+        if (manter) return;
+        const pre = st.ctx && st.ctx._balaoPreenchido;
+        if (pre && pre.length) {
+            $q("#sklSimBalaoToggle", d).checked = true; $q("#sklSimBalaoCampos", d).hidden = false;
+            const intervalo = pre.length > 1 ? pre[1].mes - pre[0].mes : pre[0].mes;
+            $q("#sklSimBalaoQtd", d).value = pre.length; $q("#sklSimBalaoIntervalo", d).value = intervalo;
+            $q("#sklSimBalaoValor", d).value = pre[0].valor > 0 ? fmtNum(pre[0].valor) : "";
+            marcarChipIntervalo();
+        } else {
+            $q("#sklSimBalaoToggle", d).checked = false; $q("#sklSimBalaoCampos", d).hidden = true;
+            $q("#sklSimBalaoQtd", d).value = "1"; $q("#sklSimBalaoIntervalo", d).value = "12"; $q("#sklSimBalaoValor", d).value = "";
+            marcarChipIntervalo();
+        }
+        atualizarBalaoTotal();
     }
     function ajustarEntradaAoValor() {
         const c = st.ctx, cond = condAtual();
@@ -322,8 +439,18 @@
         pintarEntrada(); pintar();
     }
     function tipoTxt(cond) {
+        if (Array.isArray(cond.faixas_prazo) && cond.faixas_prazo.length) {
+            const ordenadas = cond.faixas_prazo.slice().sort((a, b) => a.prazo_max_meses - b.prazo_max_meses);
+            let de = 1;
+            const partes = ordenadas.map((f) => {
+                const txt = `até ${f.prazo_max_meses}x ${f.taxa_mensal_pct > 0 ? `${fmtNum(f.taxa_mensal_pct)}% a.m.` : "sem juros"}`.replace("até", de > 1 ? `de ${de} a` : "até");
+                de = f.prazo_max_meses + 1;
+                return txt;
+            });
+            return `${cond.banco ? cond.banco + " · " : ""}${cond.sistema === "sac" ? "SAC" : "Price"} · ${partes.join(", ")}${cond.permite_balao ? " · balão opcional" : ""}`;
+        }
         const taxa = cond.taxa_aa > 0 ? `${fmtNum(cond.taxa_aa)}% a.a.${cond.tipo_taxa === "efetiva" ? " (efetiva)" : ""}${IDX[cond.indexador] ? " + " + IDX[cond.indexador] : ""}` : (IDX[cond.indexador] ? `sem juros · corrigido pelo ${IDX[cond.indexador]}` : "sem juros");
-        return `${cond.banco ? cond.banco + " · " : ""}${cond.sistema === "sac" ? "SAC" : "Price"} · ${taxa}`;
+        return `${cond.banco ? cond.banco + " · " : ""}${cond.sistema === "sac" ? "SAC" : "Price"} · ${taxa}${cond.permite_balao ? " · balão opcional" : ""}`;
     }
     function pintarConds() {
         const box = $q("#sklSimConds", st.dlg), c = st.ctx;
@@ -358,7 +485,7 @@
     function pintar() {
         const d = st.dlg, c = st.ctx, cond = condAtual();
         if (!cond) return;
-        const res = calcular({ valor: c.valor, entradaValor: c.entradaValor, prazo: c.prazo }, cond, st.config);
+        const res = calcular({ valor: c.valor, entradaValor: c.entradaValor, prazo: c.prazo, baloes: balaoParams() }, cond, st.config);
         c.res = res;
         const box = $q("#sklSimResultado", d);
         const usar = $q("#sklSimUsar", d), comp = $q("#sklSimCompartilhar", d);
@@ -376,7 +503,8 @@
   <div class="skl-sim-grid">
     <div><span>Valor financiado</span><b>${brl(res.valorFinanciado)}</b></div>
     <div><span>Entrada</span><b>${brl(res.entradaValor)} (${pctTxt(res.entradaPct)})</b></div>
-    <div><span>Total pago (entrada + parcelas)</span><b>${brl(res.totalPago)}</b></div>
+    ${res.baloes && res.baloes.length ? `<div><span>Balão (${res.baloes.length}x a cada ${res.baloes.length > 1 ? res.baloes[1].mes - res.baloes[0].mes : res.baloes[0].mes} meses)</span><b>${brl(res.totalBaloes)}</b></div>` : ""}
+    <div><span>Total pago (entrada${res.baloes && res.baloes.length ? " + balão" : ""} + parcelas)</span><b>${brl(res.totalPago)}</b></div>
     <div><span>Total de juros</span><b>${brl(res.totalJuros)}</b></div>
     ${res.totalSeguros + res.totalTarifas > 0 ? `<div><span>Seguros e tarifas</span><b>${brl(res.totalSeguros + res.totalTarifas)}</b></div>` : ""}
     ${res.cetAa != null && cond.taxa_aa > 0 ? `<div><span>CET aproximado</span><b>${fmtNum(res.cetAa)}% a.a.</b></div>` : ""}
@@ -435,10 +563,13 @@
         if (!st.condicoes.length) return toast(st.papel === "central" ? "Cadastre pelo menos uma condição em Configurações → Simulação de financiamento." : "A Central ainda não cadastrou as condições de financiamento.");
         const d = garantirDialogo();
         const anterior = opts.editar ? st.escolhidas[chaveAlvo(opts.alvo)] : null;
-        st.ctx = { valor: parseValor(opts.valor), rotulo: opts.rotulo || "Simulação livre", alvo: opts.alvo || null, permiteUsar: opts.permiteUsar !== false && st.papel !== "central", aoUsar: opts.aoUsar, condId: null, entradaPct: 20, entradaValor: 0, prazo: 240, res: null };
+        st.ctx = { valor: parseValor(opts.valor), rotulo: opts.rotulo || "Simulação livre", alvo: opts.alvo || null, permiteUsar: opts.permiteUsar !== false && st.papel !== "central", aoUsar: opts.aoUsar, condId: null, entradaPct: 20, entradaValor: 0, prazo: 240, res: null, _balaoPreenchido: null };
         $q("#sklSimTitulo", d).textContent = st.ctx.rotulo;
         $q("#sklSimValor", d).value = st.ctx.valor > 0 ? brl(st.ctx.valor) : "";
         const inicial = (anterior && st.condicoes.find((x) => String(x.id) === String(anterior.condicao_id))) || st.condicoes[0];
+        if (anterior && String(inicial.id) === String(anterior.condicao_id) && Array.isArray(anterior.baloes) && anterior.baloes.length) {
+            st.ctx._balaoPreenchido = anterior.baloes;
+        }
         escolherCondicao(inicial.id, false);
         if (anterior && String(inicial.id) === String(anterior.condicao_id)) {
             st.ctx.entradaPct = anterior.entrada_pct; st.ctx.entradaValor = anterior.entrada_valor; st.ctx.prazo = anterior.prazo_meses;
