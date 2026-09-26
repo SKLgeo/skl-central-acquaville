@@ -251,9 +251,10 @@
 .skl-sim-grid span{display:block;font-size:11px;opacity:.8;letter-spacing:.03em}
 .skl-sim-grid b{font-size:15px}
 .skl-sim-err{margin-top:16px;border-radius:12px;background:#fbeceb;color:#8d3d35;padding:12px 14px;font-size:14px;font-weight:600}
-.skl-sim details{margin-top:12px;border:1px solid #dbe4e8;border-radius:10px;padding:8px 10px}
+.skl-sim details{margin-top:12px;border:1px solid #dbe4e8;border-radius:10px;padding:8px 10px;max-width:100%;box-sizing:border-box}
 .skl-sim summary{cursor:pointer;font-weight:700;font-size:13px;color:var(--navy,#0B4F78)}
-.skl-sim table{width:100%;border-collapse:collapse;font-size:12px;margin-top:8px}
+#sklSimTabela{overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%}
+.skl-sim table{width:100%;min-width:440px;border-collapse:collapse;font-size:12px;margin-top:8px}
 .skl-sim th,.skl-sim td{padding:5px 4px;border-bottom:1px solid #edf1f3;text-align:right;white-space:nowrap}
 .skl-sim th:first-child,.skl-sim td:first-child{text-align:left}
 .skl-sim-aviso{font-size:11.5px;color:var(--muted,#66777c);margin:12px 0 0;line-height:1.4}
@@ -268,6 +269,10 @@
 .skl-sim-dl{margin:6px 0 0;display:grid;gap:4px}
 .skl-sim-dl div{display:flex;justify-content:space-between;gap:10px;font-size:13px;border-bottom:1px dashed #dbe4e8;padding:3px 0}
 .skl-sim-dl dt{color:var(--muted,#66777c)}.skl-sim-dl dd{margin:0;font-weight:700;text-align:right}
+#sklSimBalaoSec{border:1.5px solid #d3dde1;border-radius:12px;padding:12px 14px;margin-top:14px;background:#f8fafb}
+#sklSimBalaoSec h3{margin-top:0}
+#sklSimBalaoCampos{margin-top:10px}
+#sklSimBalaoIntervaloChips{margin-top:8px}
 .skl-simbox{border:1.5px dashed #b9cbd3;border-radius:12px;padding:12px 14px;background:#f5f9fb;margin:6px 0 4px}
 .skl-simbox.ok{border-style:solid;border-color:#9ed5b6;background:#f2fbf6}
 .skl-simbox b{display:block;color:var(--navy,#0B4F78);font-size:14px}
@@ -276,7 +281,7 @@
 .skl-simbox button.sec{background:#e3ecf0;color:var(--navy,#0B4F78)}
 .skl-sim-toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%) translateY(20px);background:#0d2a3a;color:#fff;padding:11px 16px;border-radius:12px;font-size:14px;opacity:0;pointer-events:none;transition:.25s;z-index:99999;max-width:90vw}
 .skl-sim-toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
-@media(max-width:420px){.skl-sim-card{padding:16px 14px 18px}.skl-sim-foot{margin:16px -14px -18px;padding:10px 14px 14px;bottom:-18px}.skl-sim-res .big{font-size:26px}}`;
+@media(max-width:420px){.skl-sim-card{padding:16px 14px 18px}.skl-sim-foot{margin:16px -14px -18px;padding:10px 14px 14px;bottom:-18px}.skl-sim-res .big{font-size:26px}.skl-sim table{min-width:0;font-size:11px}.skl-sim th,.skl-sim td{padding:4px 3px}}`;
 
     function garantirEstilo() {
         if (!$q("#sklSimStyle")) { const s = document.createElement("style"); s.id = "sklSimStyle"; s.textContent = CSS; document.head.appendChild(s); }
@@ -295,8 +300,9 @@
   <h3>2 · Entrada</h3>
   <div class="skl-sim-chips" id="sklSimEntradaChips"></div>
   <input type="range" id="sklSimEntradaRange" min="10" max="90" step="1">
-  <div class="skl-sim-row"><div><label class="skl-l" for="sklSimEntradaValor">Valor da entrada</label><input type="text" id="sklSimEntradaValor" inputmode="decimal" autocomplete="off"></div>
+  <div class="skl-sim-row" id="sklSimEntradaEditRow"><div><label class="skl-l" for="sklSimEntradaValor">Valor da entrada</label><input type="text" id="sklSimEntradaValor" inputmode="decimal" autocomplete="off"></div>
   <div><label class="skl-l" for="sklSimEntradaPct">Entrada (%)</label><input type="text" id="sklSimEntradaPct" inputmode="decimal" autocomplete="off"></div></div>
+  <p class="skl-sim-hint" id="sklSimEntradaFixaTxt" hidden></p>
   <p class="skl-sim-hint" id="sklSimEntradaHint"></p>
   <div id="sklSimBalaoSec" hidden>
     <h3>Balão (opcional)</h3>
@@ -461,6 +467,17 @@
         const d = st.dlg, c = st.ctx, cond = condAtual();
         if (!cond) return;
         const minPct = entradaMinimaPct(cond);
+        const fixa = !!cond.entrada_fixa;
+        if (fixa) { c.entradaPct = minPct; c.entradaValor = arred((c.valor * minPct) / 100); }
+        $q("#sklSimEntradaChips", d).hidden = fixa;
+        $q("#sklSimEntradaRange", d).hidden = fixa;
+        $q("#sklSimEntradaEditRow", d).hidden = fixa;
+        $q("#sklSimEntradaFixaTxt", d).hidden = !fixa;
+        if (fixa) {
+            $q("#sklSimEntradaFixaTxt", d).textContent = `Entrada fixa desta condição: ${pctTxt(minPct)}${c.valor > 0 ? ` (${brl(c.entradaValor)})` : ""} — não é possível alterar.`;
+            $q("#sklSimEntradaHint", d).textContent = `Financia até ${pctTxt(cond.financiavel_max_pct)} do imóvel.`;
+            return;
+        }
         const pcts = [10, 20, 30, 40, 50].filter((p) => p >= Math.ceil(minPct));
         if (!pcts.includes(Math.ceil(minPct))) pcts.unshift(Math.ceil(minPct));
         const chips = $q("#sklSimEntradaChips", d);
