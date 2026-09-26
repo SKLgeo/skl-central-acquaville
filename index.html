@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self' file: data:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://xigwlofqkmiibzbongkn.supabase.co wss://xigwlofqkmiibzbongkn.supabase.co https://*.github.com https://*.githubusercontent.com; font-src 'self' data:;" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' file: data:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://xigwlofqkmiibzbongkn.supabase.co wss://xigwlofqkmiibzbongkn.supabase.co https://*.github.com https://*.githubusercontent.com https://fcm.googleapis.com https://firebaseinstallations.googleapis.com https://fcmregistrations.googleapis.com; font-src 'self' data:;" />
   <title>Acquaville Central</title>
   <meta name="theme-color" content="#163D26" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -441,7 +441,10 @@
     <button id="installDialogClose" class="primary-button full-width" type="button">Entendi</button>
   </dialog>
 
+  <script src="vendor/firebase/firebase-app-compat.js"></script>
+  <script src="vendor/firebase/firebase-messaging-compat.js"></script>
   <script src="app.js"></script>
   <script src="web.js"></script>
+  <script src="push-web.js"></script>
 </body>
 </html>

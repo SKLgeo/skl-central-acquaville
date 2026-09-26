@@ -54,3 +54,38 @@ self.addEventListener("fetch", (event) => {
       .catch(() => caches.match(request)),
   );
 });
+
+// Notificação push (Web Push via Firebase Cloud Messaging) — chega mesmo com a
+// aba/PWA fechada. Não usa o SDK do Firebase aqui dentro: o payload que a
+// notificar-corretor manda já vem no formato { notification: {title, body}, data },
+// então só precisa do jeito padrão do navegador (evento "push").
+self.addEventListener("push", (event) => {
+  let payload = {};
+  try {
+    payload = event.data ? event.data.json() : {};
+  } catch {
+    return;
+  }
+  const notif = payload.notification || {};
+  const title = notif.title || "Acquaville";
+  const options = {
+    body: notif.body || "",
+    icon: "./assets/icons/icon-192.png",
+    badge: "./assets/icons/icon-192.png",
+    data: { link: payload.data?.link || "./" },
+  };
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const link = event.notification.data?.link || "./";
+  event.waitUntil(
+    clients.matchAll({ type: "window", includeUncontrolled: true }).then((windowClients) => {
+      for (const client of windowClients) {
+        if (client.url.startsWith(self.location.origin) && "focus" in client) return client.focus();
+      }
+      return clients.openWindow(link);
+    }),
+  );
+});

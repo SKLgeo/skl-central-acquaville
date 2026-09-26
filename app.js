@@ -542,6 +542,7 @@
         await Promise.all([ ...estoqueTasks, loadRequests(), loadAudit(), podeGerenciar ? loadUsers() : Promise.resolve(), podeGerenciar ? loadPlanInfo() : Promise.resolve() ]);
         connectRealtime();
         iniciarSimulador(podeGerenciar);
+        window.SKLPushWeb?.registrar(sb, currentUser.id);
         showPage("dashboard");
         if (vertical) {
             $("mapa3dButton").hidden = true;
