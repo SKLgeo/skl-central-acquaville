@@ -34,7 +34,7 @@
     // uma conta com acesso múltiplo veria os empreendimentos de outro cliente
     // dentro do app com a marca da Acquaville.
     const SLUGS_PERMITIDOS = [ "acquaville" ];
-    const APP_VERSION = "0.3.5";
+    const APP_VERSION = "0.3.7";
     if ($("appVersionText")) $("appVersionText").textContent = `v${APP_VERSION}`;
     const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
         auth: {
@@ -1587,10 +1587,32 @@
     function renderRequests() {
         const status = $("requestFilter").value;
         const list = requests.filter(item => !status || item.status === status);
-        $("requestList").innerHTML = list.length ? list.map(item => `<article class="request-card"><small>${h(formatDate(item.created_at))}</small><h3>${requestTargetLabel(item)}</h3><p><strong>${item.type === "reserva" ? "Pedido de reserva" : "Indicação de venda"}</strong></p><p>Cliente: ${h(item.customer_name)}</p><small>Corretor: ${h(item.created_by_name)} · ${h(ROTULO_STATUS_PEDIDO[item.status] || item.status)}</small>${infoPrazoPedido(item)}${item.status === "pendente" ? `<button class="primary-button" data-request="${h(item.id)}">Analisar</button>` : ""}${item.status === "aprovada" ? `<button class="secondary-button" data-contract="${h(item.id)}">Fechamento / Contrato</button>` : ""}</article>`).join("") : '<div class="empty-state">Nenhuma solicitação nesta situação.</div>';
+        const podeAnonimizar = currentUser.papel === "administrador";
+        const statusEncerrados = [ "aprovada", "rejeitada", "expirada" ];
+        $("requestList").innerHTML = list.length ? list.map(item => `<article class="request-card"><small>${h(formatDate(item.created_at))}</small><h3>${requestTargetLabel(item)}</h3><p><strong>${item.type === "reserva" ? "Pedido de reserva" : "Indicação de venda"}</strong></p><p>Cliente: ${h(item.customer_name)}</p><small>Corretor: ${h(item.created_by_name)} · ${h(ROTULO_STATUS_PEDIDO[item.status] || item.status)}</small>${infoPrazoPedido(item)}${item.status === "pendente" ? `<button class="primary-button" data-request="${h(item.id)}">Analisar</button>` : ""}${item.status === "aprovada" ? `<button class="secondary-button" data-contract="${h(item.id)}">Fechamento / Contrato</button>` : ""}${podeAnonimizar && statusEncerrados.includes(item.status) && item.customer_cpf !== null ? `<button class="secondary-button" data-anonimizar="${h(item.id)}">Anonimizar dados do cliente</button>` : ""}</article>`).join("") : '<div class="empty-state">Nenhuma solicitação nesta situação.</div>';
         $("requestList").querySelectorAll("[data-request]").forEach(button => button.addEventListener("click", () => openRequest(button.dataset.request)));
         $("requestList").querySelectorAll("[data-contract]").forEach(button => button.addEventListener("click", () => openContractDialog(button.dataset.contract)));
+        $("requestList").querySelectorAll("[data-anonimizar]").forEach(button => button.addEventListener("click", () => anonimizarClienteSolicitacao(button.dataset.anonimizar)));
         atualizarPrazos();
+    }
+    async function anonimizarClienteSolicitacao(solicitacaoId) {
+        if (!confirm("Remover permanentemente nome, telefone, CPF, e-mail e endereço do cliente desta solicitação? O restante do registro (status, valores, comissão) é preservado. Não é possível desfazer.")) return;
+        try {
+            const {error: error} = await sb.rpc("anonimizar_cliente_solicitacao", {p_solicitacao_id: solicitacaoId});
+            if (error) throw error;
+            const index = requests.findIndex(item => item.id === solicitacaoId);
+            if (index >= 0) {
+                requests[index].customer_name = "[dados removidos a pedido do titular]";
+                requests[index].customer_phone = null;
+                requests[index].customer_cpf = null;
+                requests[index].customer_email = null;
+                requests[index].customer_address = null;
+            }
+            renderRequests();
+            toast("Dados do cliente anonimizados.");
+        } catch (error) {
+            toast(traduzErro(error.message));
+        }
     }
     function openRequest(requestId) {
         const request = requests.find(item => item.id === requestId);
@@ -2256,6 +2278,7 @@
                 action: "criar_convite",
                 empreendimento_slugs: slugs,
                 display_name: $("inviteNameInput").value,
+                cpf: $("inviteCpfInput").value.trim() || null,
                 papel: $("inviteRoleInput").value
             });
             await loadUsers();
@@ -2281,6 +2304,7 @@
                 action: "criar_usuario_direto",
                 empreendimento_slugs: slugs,
                 display_name: $("directNameInput").value,
+                cpf: $("directCpfInput").value.trim() || null,
                 email: $("directEmailInput").value,
                 password: $("directPasswordInput").value,
                 papel: $("directRoleInput").value,
@@ -2290,6 +2314,7 @@
             const reaproveitado = data.reused_existing_account ? " (e-mail já tinha conta em outro empreendimento — vinculamos direto, mesma senha de sempre.)" : "";
             showMessage($("directUserMessage"), (data.expira_em ? `Acesso criado — expira em ${formatDate(data.expira_em)}.` : "Acesso criado sem prazo de validade.") + reaproveitado, true);
             $("directNameInput").value = "";
+            $("directCpfInput").value = "";
             $("directEmailInput").value = "";
             $("directPasswordInput").value = "";
         } catch (error) {
