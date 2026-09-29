@@ -140,3 +140,33 @@ tr.unit-row-selected,#unitTableBody tr.unit-row-selected:hover{background:#eef6f
 .request-simulacao{margin:10px 0;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:#f4f9fc}
 .request-simulacao small{display:block;margin-top:6px;color:var(--muted)}
 .request-sim-acoes{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}.request-sim-acoes .secondary-button{padding:9px 12px;font-size:13px}
+
+/* ---- Celular / link (2026-09-29): nada pode passar da largura da tela ---- */
+html,body{max-width:100%;overflow-x:hidden}
+/* o mapa interativo (Leaflet) tem camadas com z-index 400–1000; isolado aqui ele não cobre mais os botões da barra */
+.mapa3d-container{z-index:1;isolation:isolate}
+.mapa3d-topbar{z-index:10;gap:10px}
+.mapa3d-heading{min-width:0;flex:1 1 auto}
+.mapa3d-heading h2{overflow-wrap:anywhere}
+.mapa3d-topbar .close-button{flex:0 0 auto}
+.mapa3d-legend{z-index:5}
+@media(max-width:780px){
+  .workspace{padding:0 14px 30px;min-width:0}
+  .toolbar{flex-wrap:wrap}
+  .toolbar input,.toolbar select{flex:1 1 100%;max-width:none!important;min-width:0}
+  .toolbar>button{flex:1 1 auto;min-width:0}
+  .sidebar{padding:calc(12px + env(safe-area-inset-top)) 12px 10px}
+  .sidebar-brand{padding-bottom:10px;margin-bottom:10px}
+  .sidebar-brand img{width:120px;max-height:70px}
+  .sidebar nav{display:flex;overflow-x:auto;gap:6px;-webkit-overflow-scrolling:touch;scrollbar-width:none;padding-bottom:2px}
+  .sidebar nav::-webkit-scrollbar{display:none}
+  .nav-button{flex:0 0 auto;padding:9px 12px;white-space:nowrap;background:rgba(255,255,255,.08)}
+  .sidebar-user{margin-top:10px;padding-top:10px;display:flex;flex-wrap:wrap;align-items:center;gap:4px 12px}
+  .sidebar-user button{margin-left:auto}
+  .mapa3d-topbar{padding:calc(12px + env(safe-area-inset-top)) 12px 12px;align-items:flex-start}
+  .mapa3d-heading h2{font-size:15px;line-height:1.25}
+  .mapa3d-legend{flex-wrap:wrap;justify-content:center;gap:8px 12px;width:calc(100% - 24px);bottom:12px;font-size:11px;border-radius:16px;padding:9px 12px}
+  /* editor do mapa: painel embaixo (metade da tela) em vez de coluna de 320px cobrindo o mapa */
+  .editor-mapa-painel{top:auto;left:0;width:auto;height:48vh;padding:14px 14px 18px;border-radius:18px 18px 0 0;box-shadow:0 -10px 30px rgba(0,0,0,.25)}
+  .com-painel-editor{margin-right:0;margin-bottom:48vh}
+}
