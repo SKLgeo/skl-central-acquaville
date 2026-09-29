@@ -683,22 +683,25 @@
 #sklSimPrintArea .pp-info{display:grid;grid-template-columns:1fr 1fr;gap:6px 18px;margin:0 0 16px;padding:12px 14px;border:1px solid #dfe6e9;border-radius:8px}
 #sklSimPrintArea .pp-info span{display:block;font-size:11px;color:#66777c}
 #sklSimPrintArea h2{font-size:14px;margin:18px 0 8px;color:#163D26;text-transform:uppercase;letter-spacing:.05em}
-#sklSimPrintArea table{width:100%;border-collapse:collapse;font-size:12px}
-#sklSimPrintArea th,#sklSimPrintArea td{padding:5px 6px;border-bottom:1px solid #e6ecee;text-align:right;white-space:nowrap}
+#sklSimPrintArea table{width:100%!important;min-width:0!important;max-width:100%;border-collapse:collapse;font-size:12px;table-layout:auto}
+#sklSimPrintArea th,#sklSimPrintArea td{padding:5px 6px;border-bottom:1px solid #e6ecee;text-align:right;white-space:nowrap;position:static!important}
 #sklSimPrintArea th:first-child,#sklSimPrintArea td:first-child{text-align:left}
 #sklSimPrintArea th{background:#f3f6f7;font-size:11px}
 #sklSimPrintArea .pp-dl{display:grid;grid-template-columns:1fr 1fr;gap:0 24px}
 #sklSimPrintArea .pp-dl div{display:flex;justify-content:space-between;gap:10px;border-bottom:1px dashed #dbe4e8;padding:4px 0}
 #sklSimPrintArea .pp-dl dt{color:#66777c}#sklSimPrintArea .pp-dl dd{margin:0;font-weight:700;text-align:right}
+#sklSimPrintArea .pp-minis{display:flex;flex-wrap:wrap;gap:0 28px}#sklSimPrintArea .pp-mini{flex:1 1 260px;max-width:380px}
 #sklSimPrintArea .pp-aviso{margin-top:18px;font-size:11px;color:#66777c}
 #sklSimPrintArea .pp-ass{display:flex;gap:40px;margin-top:60px}#sklSimPrintArea .pp-ass div{flex:1;border-top:1px solid #333;padding-top:6px;text-align:center;font-size:11px}
-@media(max-width:600px){#sklSimPrintArea .pp-doc{padding:20px 16px;margin:10px 6px 30px}#sklSimPrintArea .pp-dl,#sklSimPrintArea .pp-info{grid-template-columns:1fr}}
+#sklSimPrintArea .pp-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%}
+@media(max-width:600px){#sklSimPrintArea .pp-doc{padding:20px 16px;margin:10px 6px 30px}#sklSimPrintArea table{font-size:11px}#sklSimPrintArea th,#sklSimPrintArea td{padding:4px 4px}#sklSimPrintArea .pp-dl,#sklSimPrintArea .pp-info{grid-template-columns:1fr}}
 @media print{
   body.sklsim-imprimindo>*:not(#sklSimPrintArea){display:none!important}
   body.sklsim-imprimindo #sklSimPrintArea{position:static!important;overflow:visible!important;background:#fff!important}
   #sklSimPrintArea .pp-barra{display:none!important}
   #sklSimPrintArea .pp-doc{box-shadow:none!important;margin:0!important;max-width:none!important;padding:0!important}
   #sklSimPrintArea tr{break-inside:avoid}
+  #sklSimPrintArea .pp-scroll{overflow:visible!important}
 }`;
     let printReabrir = [];
     function fecharProposta() {
@@ -735,11 +738,11 @@
         const nEnt = Math.max(1, Number(snap.entrada_parcelas) || 1);
         if (nEnt > 1) {
             const vEnt = Number(snap.entrada_parcela_valor) || snap.entrada_valor / nEnt;
-            entradaTabela = `<h2>Entrada (${nEnt}x sem juros)</h2><table><thead><tr><th>Parcela da entrada</th><th>Valor</th></tr></thead><tbody>${Array.from({ length: nEnt }, (_, k) => `<tr><td>${k + 1}ª</td><td>${brl(vEnt)}</td></tr>`).join("")}</tbody></table>`;
+            entradaTabela = `<div class="pp-mini"><h2>Entrada (${nEnt}x sem juros)</h2><table><thead><tr><th>Parcela da entrada</th><th>Valor</th></tr></thead><tbody>${Array.from({ length: nEnt }, (_, k) => `<tr><td>${k + 1}ª</td><td>${brl(vEnt)}</td></tr>`).join("")}</tbody></table></div>`;
         }
-        const baloesTabela = Array.isArray(snap.baloes) && snap.baloes.length ? `<h2>Balões</h2><table><thead><tr><th>Mês</th><th>Valor</th></tr></thead><tbody>${snap.baloes.map((b) => `<tr><td>${b.mes}</td><td>${brl(b.valor)}</td></tr>`).join("")}</tbody></table>` : "";
+        const baloesTabela = Array.isArray(snap.baloes) && snap.baloes.length ? `<div class="pp-mini"><h2>Balões</h2><table><thead><tr><th>Mês</th><th>Valor</th></tr></thead><tbody>${snap.baloes.map((b) => `<tr><td>${b.mes}</td><td>${brl(b.valor)}</td></tr>`).join("")}</tbody></table></div>` : "";
         const quadro = res && res.ok
-            ? `<h2>Quadro de parcelas</h2><table><thead><tr><th>Mês</th><th>Parcela</th><th>Juros</th><th>Amortização</th><th>Saldo</th></tr></thead><tbody>${res.tabela.map((r) => `<tr><td>${r.k}</td><td>${brl(r.parcela)}</td><td>${brl(r.juros)}</td><td>${brl(r.amort)}</td><td>${brl(r.saldo)}</td></tr>`).join("")}</tbody></table>`
+            ? `<h2>Quadro de parcelas</h2><div class="pp-scroll"><table><thead><tr><th>Mês</th><th>Parcela</th><th>Juros</th><th>Amortização</th><th>Saldo</th></tr></thead><tbody>${res.tabela.map((r) => `<tr><td>${r.k}</td><td>${brl(r.parcela)}</td><td>${brl(r.juros)}</td><td>${brl(r.amort)}</td><td>${brl(r.saldo)}</td></tr>`).join("")}</tbody></table></div>`
             : `<p class="pp-aviso">A condição usada nesta simulação não está mais cadastrada — o quadro de parcelas não pôde ser refeito.</p>`;
         printReabrir = Array.from(document.querySelectorAll("dialog[open]"));
         printReabrir.forEach((dlg) => { try { dlg.close(); } catch (e) {} });
@@ -751,7 +754,7 @@
   <p class="pp-sub">${esc(info.empreendimento || "")}${info.empreendimento ? " · " : ""}emitida em ${hojeTxt}</p>
   <div class="pp-info"><div><span>Cliente</span><b>${esc(info.cliente || "—")}</b></div><div><span>Corretor</span><b>${esc(info.corretor || "—")}</b></div></div>
   <h2>Resumo</h2>${dl(resumo)}
-  ${entradaTabela}${baloesTabela}${quadro}
+  <div class="pp-minis">${entradaTabela}${baloesTabela}</div>${quadro}
   <p class="pp-aviso">${esc((st.config && st.config.aviso_texto) || "Simulação meramente ilustrativa, sem valor de proposta ou aprovação de crédito.")}</p>
   <div class="pp-ass"><div>Cliente</div><div>Empresa</div></div>
 </div>`;
