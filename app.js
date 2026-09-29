@@ -22,7 +22,11 @@
         "auth.login": "entrou no sistema",
         "auth.password_changed": "alterou a senha",
         "auth.activated": "ativou o acesso",
-        "database.created": "criou a base inicial"
+        "database.created": "criou a base inicial",
+        "reserva.expired": "reserva venceu sem conclusão (lote liberado)",
+        "reserva.block_released": "liberou o bloqueio de um corretor",
+        "reserva.prazos_alterados": "alterou os tempos da reserva",
+        "user.created_direct": "criou um acesso direto"
     };
     const SUPABASE_URL = "https://xigwlofqkmiibzbongkn.supabase.co";
     const SUPABASE_ANON_KEY = "sb_publishable_mqppAm9n79xl6rYafzXyNQ_mGVoX3Vd";
@@ -34,7 +38,7 @@
     // uma conta com acesso múltiplo veria os empreendimentos de outro cliente
     // dentro do app com a marca da Acquaville.
     const SLUGS_PERMITIDOS = [ "acquaville" ];
-    const APP_VERSION = "0.3.7";
+    const APP_VERSION = "0.3.8";
     if ($("appVersionText")) $("appVersionText").textContent = `v${APP_VERSION}`;
     const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
         auth: {
@@ -542,6 +546,7 @@
         await Promise.all([ ...estoqueTasks, loadRequests(), loadAudit(), podeGerenciar ? loadUsers() : Promise.resolve(), podeGerenciar ? loadPlanInfo() : Promise.resolve() ]);
         connectRealtime();
         iniciarSimulador(podeGerenciar);
+        if (podeGerenciar) carregarPrazosReserva();
         window.SKLPushWeb?.oferecer(sb, currentUser.id);
         showPage("dashboard");
         if (vertical) {
@@ -552,11 +557,64 @@
             });
         }
     }
+    // Tempos da reserva (pedido / reserva ativa / bloqueio) — só o administrador altera,
+    // pela RPC configurar_prazos_reserva; central_vendas só consulta.
+    function textoPrazo(min) {
+        const m = Number(min) || 0;
+        if (m < 60) return `${m} min`;
+        const h = Math.floor(m / 60), r = m % 60;
+        return r ? `${h} h ${r} min` : `${h} h`;
+    }
+    function pintarResumoPrazos() {
+        const p = Number($("prazoPedidoInput").value), v = Number($("prazoValidadeInput").value), b = Number($("prazoBloqueioInput").value);
+        $("prazosReservaResumo").textContent = `Hoje: a Central tem ${textoPrazo(p)} para responder; a reserva aprovada vale ${textoPrazo(v)}; ${b > 0 ? `quem não concluir fica ${b} h sem poder reservar o mesmo lote` : "sem bloqueio para quem não concluir"}.`;
+    }
+    async function carregarPrazosReserva() {
+        const painel = $("prazosReservaPanel");
+        if (!painel) return;
+        const ehAdmin = currentUser.papel === "administrador";
+        [ "prazoPedidoInput", "prazoValidadeInput", "prazoBloqueioInput" ].forEach(id => $(id).disabled = !ehAdmin);
+        $("prazosReservaMessage").hidden = true;
+        const {data: data, error: error} = await sb.from("empreendimentos").select("reserva_pedido_min, reserva_validade_min, reserva_bloqueio_horas").eq("id", empreendimentoId).maybeSingle();
+        if (error || !data) {
+            painel.hidden = true;
+            return;
+        }
+        $("prazoPedidoInput").value = data.reserva_pedido_min;
+        $("prazoValidadeInput").value = data.reserva_validade_min;
+        $("prazoBloqueioInput").value = data.reserva_bloqueio_horas;
+        pintarResumoPrazos();
+        if (!painel.dataset.ligado) {
+            painel.dataset.ligado = "1";
+            [ "prazoPedidoInput", "prazoValidadeInput", "prazoBloqueioInput" ].forEach(id => $(id).addEventListener("input", pintarResumoPrazos));
+            painel.addEventListener("submit", async event => {
+                event.preventDefault();
+                if (currentUser.papel !== "administrador") return;
+                const botao = $("prazosReservaSalvar");
+                botao.disabled = true;
+                try {
+                    const {error: rpcError} = await sb.rpc("configurar_prazos_reserva", {
+                        p_empreendimento_id: empreendimentoId,
+                        p_pedido_min: Math.round(Number($("prazoPedidoInput").value)),
+                        p_validade_min: Math.round(Number($("prazoValidadeInput").value)),
+                        p_bloqueio_horas: Math.round(Number($("prazoBloqueioInput").value))
+                    });
+                    if (rpcError) throw rpcError;
+                    showMessage($("prazosReservaMessage"), "Tempos salvos. Valem para os próximos pedidos.", true);
+                    loadAudit();
+                } catch (erro) {
+                    showMessage($("prazosReservaMessage"), erro.message === "FORBIDDEN" ? "Somente o administrador pode alterar os tempos." : traduzErro(erro.message));
+                } finally {
+                    botao.disabled = false;
+                }
+            });
+        }
+    }
     function iniciarSimulador(podeGerenciar) {
         if (!window.SKLSimulador) return;
         window.SKLSimulador.init({ sb, empreendimentoId, papel: "central", toast }).catch(() => {});
         if (!podeGerenciar || !window.SKLSimuladorAdmin) return;
-        window.SKLSimuladorAdmin.montar($("simuladorAdminPanel"), { sb, getEmpreendimentoId: async () => empreendimentoId, getPapel: () => currentUser.papel, toast, modeloUrl: "modelo-simulacao-financiamento.xlsx" }).catch(() => {});
+        window.SKLSimuladorAdmin.montar($("simuladorAdminPanel"), { sb, getEmpreendimentoId: async () => empreendimentoId, getPapel: () => currentUser.papel, toast, modeloUrl: "modelo-simulacao-financiamento.xlsx", ocultarIntegracao: true }).catch(() => {});
     }
     let mapa3dInstance = null;
     let mapa3dDados = null;
@@ -654,11 +712,11 @@
         mapa3dDados = null;
     }
 
-    // --- Editor do mapa interativo (só Central Windows / Electron, só administrador) ---
+    // --- Editor do mapa interativo (qualquer Central: Windows, Android ou link; só administrador) ---
     // "a central não define onde clicar eu que faço" — pedido explicito do
     // Yuri pra poder posicionar/editar os pontos do mapa artistico direto
-    // pelo programa, sem depender de mim rodar SQL a cada ajuste. Não
-    // aparece no app Android nem no link web (gate por navigator.userAgent).
+    // pelo programa, sem depender de mim rodar SQL a cada ajuste.
+    // (desde 2026-09-28 também no link web — ver podeEditarMapa).
     const isElectronApp = /Electron\//.test(navigator.userAgent);
     const isNativeCentralApp = Boolean(window.NativeBridge);
     let modoEdicaoMapa = false;
@@ -666,11 +724,11 @@
     let editorSelecionado = null;
     let editorSujo = false;
     function podeEditarMapa() {
-        // Central Windows (Electron) e Central Android (app nativo) podem
-        // editar o mapa; o Corretor (app e link web) so visualiza — pedido
-        // explicito do Yuri de manter a posicao dos pontos sob controle da
-        // Central, nao do corretor.
-        return (isElectronApp || isNativeCentralApp) && currentUser && currentUser.papel === "administrador";
+        // Qualquer Central (Windows, Android ou o LINK web) pode editar o mapa,
+        // desde que o usuário seja administrador — pedido da Acquaville em
+        // 2026-09-28 (há centrais usando só o link). O Corretor só visualiza.
+        // No banco, a escrita em mapas_3d também exige e_admin().
+        return Boolean(currentUser && currentUser.papel === "administrador");
     }
     function entrarModoEdicaoMapa() {
         if (!mapa3dDados) return;
@@ -1620,7 +1678,8 @@
         selectedRequest = request;
         const alvo = request.lote_id ? lots.get(request.lot_key) : unidades.get(request.unidade_id);
         $("requestDialogTitle").textContent = requestTargetLabel(request);
-        $("requestDialogContent").innerHTML = `<div class="request-card"><p><strong>${request.type === "reserva" ? "Pedido de reserva" : "Indicação de venda"}</strong></p><p>Cliente: ${h(request.customer_name)}</p><p>Telefone: ${h(request.customer_phone || "Não informado")}</p><p>CPF: ${h(request.customer_cpf || "Não informado")}</p><p>E-mail: ${h(request.customer_email || "Não informado")}</p><p>Endereço: ${h(request.customer_address || "Não informado")}</p><p>Forma de pagamento: ${h(request.payment_plan_name || "Não informada")}</p>${request.simulacao && window.SKLSimulador ? `<div class="request-simulacao"><strong>Simulação de financiamento escolhida pelo cliente</strong>${window.SKLSimulador.resumoHtml(request.simulacao)}<small>Simulação ilustrativa feita pelo corretor; não é aprovação de crédito.</small></div>` : ""}<p>Corretor: ${h(request.created_by_name)}</p><p>Observação: ${h(request.note || "—")}</p><small>Situação atual: ${h(STATUS[alvo?.status] || "—")} · versão ${alvo?.version || "—"}</small></div>`;
+        $("requestDialogContent").innerHTML = `<div class="request-card"><p><strong>${request.type === "reserva" ? "Pedido de reserva" : "Indicação de venda"}</strong></p><p>Cliente: ${h(request.customer_name)}</p><p>Telefone: ${h(request.customer_phone || "Não informado")}</p><p>CPF: ${h(request.customer_cpf || "Não informado")}</p><p>E-mail: ${h(request.customer_email || "Não informado")}</p><p>Endereço: ${h(request.customer_address || "Não informado")}</p><p>Forma de pagamento: ${h(request.payment_plan_name || "Não informada")}</p>${request.simulacao && window.SKLSimulador ? `<div class="request-simulacao"><strong>Simulação de financiamento escolhida pelo cliente</strong>${window.SKLSimulador.resumoHtml(request.simulacao)}<small>Simulação ilustrativa feita pelo corretor; não é aprovação de crédito.</small><div class="request-sim-acoes"><button type="button" class="secondary-button" data-sim-acao="ver">Ver simulação completa</button><button type="button" class="secondary-button" data-sim-acao="imprimir">Imprimir proposta (PDF)</button></div></div>` : ""}<p>Corretor: ${h(request.created_by_name)}</p><p>Observação: ${h(request.note || "—")}</p><small>Situação atual: ${h(STATUS[alvo?.status] || "—")} · versão ${alvo?.version || "—"}</small></div>`;
+        $("requestDialogContent").querySelectorAll("[data-sim-acao]").forEach(botao => botao.addEventListener("click", () => abrirSimulacaoDoPedido(request, botao.dataset.simAcao)));
         $("requestDialogMessage").hidden = true;
         $("requestDialog").showModal();
     }
@@ -1822,6 +1881,67 @@
     }
     let contractRequest = null;
     let contractExisting = null;
+    let contractSimulacao = null;
+    // --- Simulação enviada pelo corretor → proposta (fechamento) ---
+    // A Central abre a simulação completa (com o quadro de parcelas), pode ajustar e "Salvar na
+    // proposta" — fica em contratos.dados_cliente.simulacao dessa solicitação — e imprime/gera PDF.
+    function infoPropostaDe(request) {
+        return { rotulo: requestTargetLabel(request), cliente: request.customer_name, corretor: request.created_by_name, empreendimento: empreendimentoNomeAtual };
+    }
+    function abrirSimulacaoDoPedido(request, acao, simulacao) {
+        const snap = simulacao || (contractRequest && contractRequest.id === request.id && contractSimulacao) || request.simulacao;
+        if (!snap || !window.SKLSimulador) return;
+        if (acao === "imprimir") return window.SKLSimulador.imprimirProposta(snap, infoPropostaDe(request));
+        window.SKLSimulador.abrir({
+            valor: snap.valor_imovel,
+            rotulo: requestTargetLabel(request),
+            snapshot: snap,
+            infoProposta: infoPropostaDe(request),
+            textoUsar: "Salvar na proposta",
+            aoSalvar: novo => salvarSimulacaoNaProposta(request, novo)
+        });
+    }
+    async function salvarSimulacaoNaProposta(request, snap) {
+        try {
+            const {data: atual, error: lerErro} = await sb.from("contratos").select("id, dados_cliente").eq("solicitacao_id", request.id).maybeSingle();
+            if (lerErro) throw lerErro;
+            if (atual) {
+                const {data: data, error: error} = await sb.from("contratos").update({
+                    dados_cliente: { ...(atual.dados_cliente || {}), simulacao: snap },
+                    atualizado_em: new Date().toISOString()
+                }).eq("id", atual.id).select().single();
+                if (error) throw error;
+                if (contractRequest && contractRequest.id === request.id) contractExisting = data;
+            } else {
+                const {data: data, error: error} = await sb.from("contratos").insert({
+                    empreendimento_id: await empreendimentoIdAtual(),
+                    solicitacao_id: request.id,
+                    dados_cliente: { nome_completo: request.customer_name || "", telefone: request.customer_phone || "", email: request.customer_email || "", cpf: request.customer_cpf || "", simulacao: snap }
+                }).select().single();
+                if (error) throw error;
+                if (contractRequest && contractRequest.id === request.id) contractExisting = data;
+            }
+            if (contractRequest && contractRequest.id === request.id) {
+                contractSimulacao = snap;
+                pintarSimulacaoDoContrato();
+            }
+            toast("Simulação salva na proposta desta venda.");
+        } catch (error) {
+            toast(traduzErro(error.message));
+        }
+    }
+    function pintarSimulacaoDoContrato() {
+        const box = $("contractSimulacaoBox");
+        if (!box) return;
+        if (!contractSimulacao || !window.SKLSimulador) {
+            box.hidden = true;
+            box.innerHTML = "";
+            return;
+        }
+        box.hidden = false;
+        box.innerHTML = `<strong>Simulação / proposta</strong>${window.SKLSimulador.resumoHtml(contractSimulacao)}<div class="request-sim-acoes"><button type="button" class="secondary-button" data-csim="ver">Ver completa / ajustar</button><button type="button" class="secondary-button" data-csim="imprimir">Imprimir proposta (PDF)</button></div>`;
+        box.querySelectorAll("[data-csim]").forEach(botao => botao.addEventListener("click", () => abrirSimulacaoDoPedido(contractRequest, botao.dataset.csim, contractSimulacao)));
+    }
     async function openContractDialog(requestId) {
         const request = requests.find(item => item.id === requestId);
         if (!request) return;
@@ -1848,6 +1968,8 @@
         $("contractUfInput").value = endereco.uf || "";
         $("contractCepInput").value = endereco.cep || "";
         $("contractPaymentPlanInput").value = dados.forma_pagamento || "";
+        contractSimulacao = dados.simulacao || request.simulacao || null;
+        pintarSimulacaoDoContrato();
         $("contractStatusInfo").textContent = existing ? `Situação do contrato: ${existing.status} · atualizado em ${formatDate(existing.atualizado_em)}` : "Ainda não há dados salvos para este cliente.";
         $("contractDialog").showModal();
     }
@@ -1867,7 +1989,8 @@
                 uf: $("contractUfInput").value.trim().toUpperCase(),
                 cep: $("contractCepInput").value.trim()
             },
-            forma_pagamento: $("contractPaymentPlanInput").value
+            forma_pagamento: $("contractPaymentPlanInput").value,
+            simulacao: contractSimulacao || null
         };
     }
     async function saveContractData() {

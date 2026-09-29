@@ -116,12 +116,27 @@
             else cetAa = 0;
         }
         const comprometimento = Number(cfg && cfg.renda_comprometimento_pct) || 30;
+        // CET informado pela empresa (cet_fixo_aa) tem prioridade sobre o calculado.
+        const cetFixo = cond.cet_fixo_aa != null && cond.cet_fixo_aa !== "" && Number.isFinite(Number(cond.cet_fixo_aa)) ? Number(cond.cet_fixo_aa) : null;
+        // entrada dividida em até N vezes sem juros: só divide o pagamento da entrada, não muda o financiado.
+        const entradaParcelas = Math.min(entradaParcelasMax(cond), Math.max(1, Math.round(Number(p.entradaParcelas) || 1)));
         return {
             ok: true, erros: [], valor, entradaValor, entradaPct, entradaMinPct: minPct, prazo, valorFinanciado: pv, taxaMensal: i,
             parcelaInicial: primeira, parcelaFinal: ultima, totalParcelas, totalJuros, totalSeguros, totalTarifas, baloes, totalBaloes,
-            totalPago: entradaValor + totalBaloes + totalParcelas, cetAa: cetAa == null ? null : cetAa * 100, rendaMinima: primeira / (comprometimento / 100), comprometimento, tabela
+            totalPago: entradaValor + totalBaloes + totalParcelas, cetAa: cetFixo != null ? cetFixo : (cetAa == null ? null : cetAa * 100), cetFixo: cetFixo != null,
+            indexador: indexadorAplicavel(cond, prazo), entradaParcelas, entradaParcelaValor: entradaValor / entradaParcelas,
+            rendaMinima: primeira / (comprometimento / 100), comprometimento, tabela
         };
     }
+    function entradaParcelasMax(cond) { return Math.max(1, Math.min(12, Math.round(Number(cond && cond.entrada_parcelas_max) || 1))); }
+    // indexador (ex.: IPCA) só vale a partir de indexador_desde_parcela, quando a condição define isso
+    function indexadorAplicavel(cond, prazo) {
+        if (!cond || !cond.indexador || cond.indexador === "nenhum") return "nenhum";
+        const desde = Math.round(Number(cond.indexador_desde_parcela) || 0);
+        return desde > 0 && prazo < desde ? "nenhum" : cond.indexador;
+    }
+    // simulador_config.exibir_totais = false → sem total pago, total de juros e renda mínima
+    const mostraTotais = () => !(st.config && st.config.exibir_totais === false);
 
     function montarSnapshot(res, cond, extra) {
         // com faixas_prazo, a taxa realmente aplicada depende do prazo escolhido (ex.: 0% até 60x,
@@ -131,8 +146,9 @@
         const tipoTaxaExibida = temFaixas ? "nominal" : cond.tipo_taxa;
         return {
             versao: 1, rotulo: (extra && extra.rotulo) || null, condicao_id: cond.id || null, condicao_nome: cond.nome, tipo: cond.tipo, banco: cond.banco || null,
-            sistema: cond.sistema, taxa_aa: taxaAaExibida, tipo_taxa: tipoTaxaExibida, indexador: cond.indexador,
+            sistema: cond.sistema, taxa_aa: taxaAaExibida, tipo_taxa: tipoTaxaExibida, indexador: res.indexador || cond.indexador, cet_fixo: !!res.cetFixo,
             valor_imovel: arred(res.valor), entrada_valor: arred(res.entradaValor), entrada_pct: arred(res.entradaPct), prazo_meses: res.prazo,
+            entrada_parcelas: res.entradaParcelas || 1, entrada_parcela_valor: arred(res.entradaParcelaValor || res.entradaValor),
             baloes: (res.baloes || []).map((b) => ({ mes: b.mes, valor: arred(b.valor) })), balao_total: arred(res.totalBaloes || 0),
             valor_financiado: arred(res.valorFinanciado), parcela_inicial: arred(res.parcelaInicial), parcela_final: arred(res.parcelaFinal),
             total_parcelas: arred(res.totalParcelas), total_pago: arred(res.totalPago), total_juros: arred(res.totalJuros),
@@ -146,11 +162,18 @@
         const intervalo = s.baloes.length > 1 ? s.baloes[1].mes - s.baloes[0].mes : s.baloes[0].mes;
         return ` · Balão ${s.baloes.length}x de ${brl(s.baloes[0].valor)} a cada ${intervalo} meses (total ${brl(s.balao_total)})`;
     }
+    // "R$ 10.000,00 (10%)" ou "R$ 10.000,00 (10%) em 5x de R$ 2.000,00 sem juros"
+    function entradaTxt(s) {
+        const n = Math.max(1, Number(s.entrada_parcelas) || 1);
+        return `${brl(s.entrada_valor)} (${pctTxt(s.entrada_pct)})${n > 1 ? ` em ${n}x de ${brl(s.entrada_parcela_valor || s.entrada_valor / n)} sem juros` : ""}`;
+    }
+    const temCet = (s) => s && s.cet_aa != null && (s.taxa_aa > 0 || s.cet_fixo);
+    const cetTxt = (s) => `${fmtNum(s.cet_aa)}% a.a.${IDX[s.indexador] ? " + " + IDX[s.indexador] : ""}`;
     function resumoTexto(s) {
         if (!s) return "";
         const taxa = s.taxa_aa > 0 ? ` · ${fmtNum(s.taxa_aa)}% a.a.${IDX[s.indexador] ? " + " + IDX[s.indexador] : ""}` : (IDX[s.indexador] ? ` · corrigido pelo ${IDX[s.indexador]}` : " · sem juros");
         const parc = s.sistema === "sac" && s.parcela_final < s.parcela_inicial - 0.005 ? `${s.prazo_meses}x de ${brl(s.parcela_inicial)} (decrescente)` : `${s.prazo_meses}x de ${brl(s.parcela_inicial)}`;
-        return `${s.condicao_nome}${taxa} · Entrada ${brl(s.entrada_valor)} (${pctTxt(s.entrada_pct)})${balaoTexto(s)} · ${parc}`;
+        return `${s.condicao_nome}${taxa} · Entrada ${entradaTxt(s)}${balaoTexto(s)} · ${parc}`;
     }
     function resumoHtml(s) {
         if (!s) return "";
@@ -159,7 +182,7 @@
             ["Condição", `${esc(s.condicao_nome)}${s.banco ? ` <small>(${esc(s.banco)})</small>` : ""}`],
             ["Sistema / taxa", `${s.sistema === "sac" ? "SAC" : "Price"}${s.taxa_aa > 0 ? ` · ${fmtNum(s.taxa_aa)}% a.a.` : " · sem juros"}${IDX[s.indexador] ? ` · ${IDX[s.indexador]}` : ""}`],
             ["Valor do imóvel", brl(s.valor_imovel)],
-            ["Entrada", `${brl(s.entrada_valor)} (${pctTxt(s.entrada_pct)})`]
+            ["Entrada", entradaTxt(s)]
         ];
         if (Array.isArray(s.baloes) && s.baloes.length) {
             const intervalo = s.baloes.length > 1 ? s.baloes[1].mes - s.baloes[0].mes : s.baloes[0].mes;
@@ -168,16 +191,17 @@
         linhas.push(
             ["Financiado", brl(s.valor_financiado)],
             ["Prazo", `${s.prazo_meses} meses`],
-            ["Parcela", s.sistema === "sac" && s.parcela_final < s.parcela_inicial - 0.005 ? `${brl(s.parcela_inicial)} → ${brl(s.parcela_final)}` : brl(s.parcela_inicial)],
-            ["Total pago", brl(s.total_pago)]
+            ["Parcela", s.sistema === "sac" && s.parcela_final < s.parcela_inicial - 0.005 ? `${brl(s.parcela_inicial)} → ${brl(s.parcela_final)}` : brl(s.parcela_inicial)]
         );
+        if (temCet(s)) linhas.push(["CET", cetTxt(s)]);
+        if (mostraTotais()) linhas.push(["Total pago", brl(s.total_pago)]);
         return `<dl class="skl-sim-dl">${linhas.map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join("")}</dl>`;
     }
     function textoCompartilhar(s, rotulo) {
         const l = [];
         l.push(`Simulação de financiamento${rotulo ? " — " + rotulo : ""}`);
         l.push(`Valor do imóvel: ${brl(s.valor_imovel)}`);
-        l.push(`Entrada: ${brl(s.entrada_valor)} (${pctTxt(s.entrada_pct)})`);
+        l.push(`Entrada: ${entradaTxt(s)}`);
         if (Array.isArray(s.baloes) && s.baloes.length) {
             const intervalo = s.baloes.length > 1 ? s.baloes[1].mes - s.baloes[0].mes : s.baloes[0].mes;
             l.push(`Balão: ${s.baloes.length}x de ${brl(s.baloes[0].valor)} a cada ${intervalo} meses (total ${brl(s.balao_total)})`);
@@ -187,9 +211,9 @@
         l.push(`Sistema: ${s.sistema === "sac" ? "SAC (parcelas decrescentes)" : "Price (parcelas fixas)"}${s.taxa_aa > 0 ? " · " + fmtNum(s.taxa_aa) + "% a.a." : " · sem juros"}${IDX[s.indexador] ? " + " + IDX[s.indexador] : ""}`);
         l.push(`Prazo: ${s.prazo_meses} meses`);
         l.push(s.sistema === "sac" && s.parcela_final < s.parcela_inicial - 0.005 ? `Parcela: de ${brl(s.parcela_inicial)} até ${brl(s.parcela_final)}` : `Parcela: ${brl(s.parcela_inicial)}`);
-        l.push(`Total pago (entrada + parcelas): ${brl(s.total_pago)}`);
-        if (s.cet_aa != null && s.taxa_aa > 0) l.push(`CET aproximado: ${fmtNum(s.cet_aa)}% a.a.`);
-        if (s.renda_minima) l.push(`Renda mínima sugerida: ${brl(s.renda_minima)}`);
+        if (mostraTotais()) l.push(`Total pago (entrada + parcelas): ${brl(s.total_pago)}`);
+        if (temCet(s)) l.push(`${s.cet_fixo ? "CET" : "CET aproximado"}: ${cetTxt(s)}`);
+        if (s.renda_minima && mostraTotais()) l.push(`Renda mínima sugerida: ${brl(s.renda_minima)}`);
         l.push("");
         l.push((st.config && st.config.aviso_texto) || "Simulação meramente ilustrativa, sem valor de proposta ou aprovação de crédito.");
         return l.join("\n");
@@ -253,7 +277,7 @@
 .skl-sim-err{margin-top:16px;border-radius:12px;background:#fbeceb;color:#8d3d35;padding:12px 14px;font-size:14px;font-weight:600}
 .skl-sim details{margin-top:12px;border:1px solid #dbe4e8;border-radius:10px;padding:8px 10px;max-width:100%;box-sizing:border-box}
 .skl-sim summary{cursor:pointer;font-weight:700;font-size:13px;color:var(--navy,#0B4F78)}
-#sklSimTabela{overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%}
+#sklSimTabela{overflow:auto;-webkit-overflow-scrolling:touch;max-width:100%;max-height:340px}
 .skl-sim table{width:100%;min-width:440px;border-collapse:collapse;font-size:12px;margin-top:8px}
 .skl-sim th,.skl-sim td{padding:5px 4px;border-bottom:1px solid #edf1f3;text-align:right;white-space:nowrap}
 .skl-sim th:first-child,.skl-sim td:first-child{text-align:left}
@@ -304,6 +328,11 @@
   <div><label class="skl-l" for="sklSimEntradaPct">Entrada (%)</label><input type="text" id="sklSimEntradaPct" inputmode="decimal" autocomplete="off"></div></div>
   <p class="skl-sim-hint" id="sklSimEntradaFixaTxt" hidden></p>
   <p class="skl-sim-hint" id="sklSimEntradaHint"></p>
+  <div id="sklSimEntradaParcSec" hidden>
+    <label class="skl-l" style="margin-top:12px">Pagamento da entrada (sem juros)</label>
+    <div class="skl-sim-chips" id="sklSimEntradaParcChips"></div>
+    <p class="skl-sim-hint" id="sklSimEntradaParcHint"></p>
+  </div>
   <div id="sklSimBalaoSec" hidden>
     <h3>Balão (opcional)</h3>
     <label style="display:flex;gap:8px;align-items:center;font-size:13px;font-weight:700;color:var(--muted,#66777c);cursor:pointer"><input type="checkbox" id="sklSimBalaoToggle" style="width:auto"> Incluir balão</label>
@@ -332,7 +361,7 @@
   <p class="skl-sim-fonte" id="sklSimFonte"></p>
   <p class="skl-sim-aviso" id="sklSimAviso"></p>
   <div class="skl-sim-foot"><div class="skl-sim-mini" id="sklSimMini"></div>
-  <div class="skl-sim-acoes"><button class="skl-sim-btn sec" type="button" data-a="compartilhar" id="sklSimCompartilhar">Compartilhar</button><button class="skl-sim-btn pri" type="button" data-a="usar" id="sklSimUsar">Usar na reserva</button></div></div>
+  <div class="skl-sim-acoes"><button class="skl-sim-btn sec" type="button" data-a="compartilhar" id="sklSimCompartilhar">Compartilhar</button><button class="skl-sim-btn sec" type="button" data-a="imprimir" id="sklSimImprimir" hidden>Imprimir proposta</button><button class="skl-sim-btn pri" type="button" data-a="usar" id="sklSimUsar">Usar na reserva</button></div></div>
 </div>`;
         document.body.appendChild(d);
         d.addEventListener("click", (ev) => {
@@ -343,6 +372,7 @@
             if (acao === "fechar") d.close();
             else if (acao === "compartilhar") acaoCompartilhar();
             else if (acao === "usar") acaoUsar();
+            else if (acao === "imprimir") { const snap = snapAtual(); if (snap) imprimirProposta(snap, st.ctx.infoProposta || { rotulo: st.ctx.rotulo }); }
         });
         d.addEventListener("cancel", () => {});
         $q("#sklSimValor", d).addEventListener("input", () => { const c = st.ctx; if (!c) return; c.valor = parseValor($q("#sklSimValor", d).value); ajustarEntradaAoValor(); pintarEntrada(); pintar(); });
@@ -398,6 +428,8 @@
         if (!cond) return;
         c.condId = cond.id;
         const minPct = entradaMinimaPct(cond);
+        if (!manter) c.entradaParcelas = 1;
+        c.entradaParcelas = Math.min(entradaParcelasMax(cond), Math.max(1, Number(c.entradaParcelas) || 1));
         if (!manter) {
             const alvoPct = Math.max(Number(st.config && st.config.entrada_padrao_pct) || 20, minPct);
             c.entradaPct = alvoPct; c.entradaValor = arred((c.valor * alvoPct) / 100);
@@ -453,7 +485,10 @@
                 de = f.prazo_max_meses + 1;
                 return txt;
             });
-            return `${cond.banco ? cond.banco + " · " : ""}${cond.sistema === "sac" ? "SAC" : "Price"} · ${partes.join(", ")}${cond.permite_balao ? " · balão opcional" : ""}`;
+            const desde = Math.round(Number(cond.indexador_desde_parcela) || 0);
+            const idx = IDX[cond.indexador] ? ` · + ${IDX[cond.indexador]}${desde > 1 ? ` a partir de ${desde}x` : ""}` : "";
+            const entParc = entradaParcelasMax(cond) > 1 ? ` · entrada em até ${entradaParcelasMax(cond)}x` : "";
+            return `${cond.banco ? cond.banco + " · " : ""}${cond.sistema === "sac" ? "SAC" : "Price"} · ${partes.join(", ")}${idx}${entParc}${cond.permite_balao ? " · balão opcional" : ""}`;
         }
         const taxa = cond.taxa_aa > 0 ? `${fmtNum(cond.taxa_aa)}% a.a.${cond.tipo_taxa === "efetiva" ? " (efetiva)" : ""}${IDX[cond.indexador] ? " + " + IDX[cond.indexador] : ""}` : (IDX[cond.indexador] ? `sem juros · corrigido pelo ${IDX[cond.indexador]}` : "sem juros");
         return `${cond.banco ? cond.banco + " · " : ""}${cond.sistema === "sac" ? "SAC" : "Price"} · ${taxa}${cond.permite_balao ? " · balão opcional" : ""}`;
@@ -463,9 +498,24 @@
         box.innerHTML = st.condicoes.map((x) => `<button type="button" class="skl-sim-cond${String(x.id) === String(c.condId) ? " on" : ""}" data-cond="${esc(x.id)}"><b>${esc(x.nome)}</b><small>${esc(tipoTxt(x))}</small>${x.vigencia_ate ? `<small>Válida até ${esc(x.vigencia_ate.split("-").reverse().join("/"))}</small>` : ""}</button>`).join("");
         box.querySelectorAll("[data-cond]").forEach((b) => b.addEventListener("click", () => escolherCondicao(b.dataset.cond, true)));
     }
+    // Chips "À vista / 2x / … / Nx" para dividir a entrada sem juros (condição com entrada_parcelas_max > 1).
+    function pintarEntradaParcelas() {
+        const d = st.dlg, c = st.ctx, cond = condAtual();
+        const sec = $q("#sklSimEntradaParcSec", d);
+        const max = cond ? entradaParcelasMax(cond) : 1;
+        sec.hidden = max <= 1;
+        if (max <= 1) { c.entradaParcelas = 1; return; }
+        const n = Math.min(max, Math.max(1, Number(c.entradaParcelas) || 1));
+        c.entradaParcelas = n;
+        const chips = $q("#sklSimEntradaParcChips", d);
+        chips.innerHTML = Array.from({ length: max }, (_, k) => k + 1).map((k) => `<button type="button" class="skl-sim-chip${k === n ? " on" : ""}" data-eparc="${k}">${k === 1 ? "À vista" : `${k}x`}</button>`).join("");
+        chips.querySelectorAll("[data-eparc]").forEach((b) => b.addEventListener("click", () => { c.entradaParcelas = Number(b.dataset.eparc); pintarEntradaParcelas(); pintar(); }));
+        $q("#sklSimEntradaParcHint", d).textContent = n > 1 && c.entradaValor > 0 ? `${n}x de ${brl(c.entradaValor / n)} sem juros (até ${max}x).` : `Pode ser dividida em até ${max}x sem juros.`;
+    }
     function pintarEntrada(semCampoValor, semCampoPct) {
         const d = st.dlg, c = st.ctx, cond = condAtual();
         if (!cond) return;
+        pintarEntradaParcelas();
         const minPct = entradaMinimaPct(cond);
         const fixa = !!cond.entrada_fixa;
         if (fixa) { c.entradaPct = minPct; c.entradaValor = arred((c.valor * minPct) / 100); }
@@ -502,7 +552,7 @@
     function pintar() {
         const d = st.dlg, c = st.ctx, cond = condAtual();
         if (!cond) return;
-        const res = calcular({ valor: c.valor, entradaValor: c.entradaValor, prazo: c.prazo, baloes: balaoParams() }, cond, st.config);
+        const res = calcular({ valor: c.valor, entradaValor: c.entradaValor, prazo: c.prazo, baloes: balaoParams(), entradaParcelas: c.entradaParcelas }, cond, st.config);
         c.res = res;
         const box = $q("#sklSimResultado", d);
         const usar = $q("#sklSimUsar", d), comp = $q("#sklSimCompartilhar", d);
@@ -519,25 +569,31 @@
   <div class="sub">${decresc ? `decrescendo até ${brl(res.parcelaFinal)} · ${res.prazo} parcelas` : `${res.prazo} parcelas fixas`}</div>
   <div class="skl-sim-grid">
     <div><span>Valor financiado</span><b>${brl(res.valorFinanciado)}</b></div>
-    <div><span>Entrada</span><b>${brl(res.entradaValor)} (${pctTxt(res.entradaPct)})</b></div>
+    <div><span>Entrada${res.entradaParcelas > 1 ? ` (${res.entradaParcelas}x sem juros)` : ""}</span><b>${brl(res.entradaValor)} (${pctTxt(res.entradaPct)})${res.entradaParcelas > 1 ? `<br><small>${res.entradaParcelas}x de ${brl(res.entradaParcelaValor)}</small>` : ""}</b></div>
     ${res.baloes && res.baloes.length ? `<div><span>Balão (${res.baloes.length}x a cada ${res.baloes.length > 1 ? res.baloes[1].mes - res.baloes[0].mes : res.baloes[0].mes} meses)</span><b>${brl(res.totalBaloes)}</b></div>` : ""}
-    <div><span>Total pago (entrada${res.baloes && res.baloes.length ? " + balão" : ""} + parcelas)</span><b>${brl(res.totalPago)}</b></div>
-    <div><span>Total de juros</span><b>${brl(res.totalJuros)}</b></div>
+    ${mostraTotais() ? `<div><span>Total pago (entrada${res.baloes && res.baloes.length ? " + balão" : ""} + parcelas)</span><b>${brl(res.totalPago)}</b></div>
+    <div><span>Total de juros</span><b>${brl(res.totalJuros)}</b></div>` : ""}
     ${res.totalSeguros + res.totalTarifas > 0 ? `<div><span>Seguros e tarifas</span><b>${brl(res.totalSeguros + res.totalTarifas)}</b></div>` : ""}
-    ${res.cetAa != null && cond.taxa_aa > 0 ? `<div><span>CET aproximado</span><b>${fmtNum(res.cetAa)}% a.a.</b></div>` : ""}
-    <div><span>Renda mínima sugerida</span><b>${brl(res.rendaMinima)}</b></div>
+    ${res.cetAa != null && (cond.taxa_aa > 0 || res.cetFixo) ? `<div><span>${res.cetFixo ? "CET" : "CET aproximado"}</span><b>${fmtNum(res.cetAa)}% a.a.${IDX[res.indexador] ? " + " + IDX[res.indexador] : ""}</b></div>` : ""}
+    ${mostraTotais() ? `<div><span>Renda mínima sugerida</span><b>${brl(res.rendaMinima)}</b></div>` : ""}
   </div></div>`;
             usar.disabled = false; comp.disabled = false;
             $q("#sklSimMini", d).innerHTML = `<b>${brl(res.parcelaInicial)}</b> ${decresc ? "1ª parcela" : "por mês"} · ${res.prazo}x`;
-            // quadro: 12 primeiras e a última
-            const linhas = res.tabela.filter((r) => r.k <= 12 || r.k === res.prazo);
-            $q("#sklSimTabela", d).innerHTML = `<table><thead><tr><th>Mês</th><th>Parcela</th><th>Juros</th><th>Amort.</th><th>Saldo</th></tr></thead><tbody>${linhas.map((r, i) => `${i > 0 && r.k === res.prazo && res.prazo > 13 ? `<tr><td colspan="5" style="text-align:center">…</td></tr>` : ""}<tr><td>${r.k}</td><td>${brl(r.parcela)}</td><td>${brl(r.juros)}</td><td>${brl(r.amort)}</td><td>${brl(r.saldo)}</td></tr>`).join("")}</tbody></table>`;
-            $q("#sklSimTabelaBox", d).hidden = false;
+            // quadro completo (é só da Central): todas as parcelas, com rolagem
+            const linhas = res.tabela;
+            $q("#sklSimTabela", d).innerHTML = `<table><thead><tr><th>Mês</th><th>Parcela</th><th>Juros</th><th>Amort.</th><th>Saldo</th></tr></thead><tbody>${linhas.map((r) => `<tr><td>${r.k}</td><td>${brl(r.parcela)}</td><td>${brl(r.juros)}</td><td>${brl(r.amort)}</td><td>${brl(r.saldo)}</td></tr>`).join("")}</tbody></table>`;
+            // quadro de parcelas: só a Central vê (o corretor fica com a parcela e o resumo)
+            $q("#sklSimTabelaBox", d).hidden = st.papel !== "central";
         }
         $q("#sklSimFonte", d).textContent = cond.fonte ? `Fonte das condições: ${cond.fonte}${cond.atualizado_em ? " · atualizado em " + new Date(cond.atualizado_em).toLocaleDateString("pt-BR") : ""}` : "";
         $q("#sklSimAviso", d).textContent = (st.config && st.config.aviso_texto) || "";
-        $q("#sklSimUsar", d).hidden = !st.ctx.permiteUsar;
-        $q("#sklSimCompartilhar", d).parentNode.style.gridTemplateColumns = st.ctx.permiteUsar ? "1fr 1fr" : "1fr";
+        const imp = $q("#sklSimImprimir", d);
+        usar.hidden = !st.ctx.permiteUsar;
+        usar.textContent = st.ctx.textoUsar || "Usar na reserva";
+        imp.hidden = st.papel !== "central";
+        imp.disabled = !res.ok;
+        const visiveis = [ $q("#sklSimCompartilhar", d), imp, usar ].filter((b) => !b.hidden).length;
+        usar.parentNode.style.gridTemplateColumns = `repeat(${visiveis}, 1fr)`;
     }
 
     // ------------------------------------------------------------------ ações
@@ -562,6 +618,12 @@
     function acaoUsar() {
         const snap = snapAtual(); if (!snap) return;
         const c = st.ctx;
+        if (typeof c.aoSalvar === "function") {
+            // Central: "Salvar na proposta" (fechamento da venda) — não mexe no bloco de reserva do corretor
+            st.dlg.close();
+            try { c.aoSalvar(snap); } catch (e) {}
+            return;
+        }
         st.escolhidas[chaveAlvo(c.alvo)] = snap;
         registrar("usou_na_reserva", c.alvo, snap);
         const cb = c.aoUsar;
@@ -571,7 +633,9 @@
         if (typeof cb === "function") { try { cb(snap); } catch (e) {} }
     }
 
-    // opts: { valor, rotulo, alvo:{tipo:'lote'|'unidade', id, chave}, permiteUsar, aoUsar, editar }
+    // opts: { valor, rotulo, alvo:{tipo:'lote'|'unidade', id, chave}, permiteUsar, aoUsar, editar,
+    //         snapshot (abre a partir de uma simulação salva), aoSalvar + textoUsar (Central: "Salvar na proposta"),
+    //         infoProposta ({rotulo, cliente, corretor, empreendimento} para imprimir) }
     async function abrir(opts) {
         opts = opts || {};
         if (!st.sb || !st.empId) return toast("Entre em um empreendimento para simular.");
@@ -579,10 +643,16 @@
         if (!st.ativo) return toast(st.papel === "central" ? "Ative o simulador em Configurações → Simulação de financiamento." : "O simulador de financiamento ainda não foi ativado pela Central.");
         if (!st.condicoes.length) return toast(st.papel === "central" ? "Cadastre pelo menos uma condição em Configurações → Simulação de financiamento." : "A Central ainda não cadastrou as condições de financiamento.");
         const d = garantirDialogo();
-        const anterior = opts.editar ? st.escolhidas[chaveAlvo(opts.alvo)] : null;
-        st.ctx = { valor: parseValor(opts.valor), rotulo: opts.rotulo || "Simulação livre", alvo: opts.alvo || null, permiteUsar: opts.permiteUsar !== false && st.papel !== "central", aoUsar: opts.aoUsar, condId: null, entradaPct: 20, entradaValor: 0, prazo: 240, res: null, _balaoPreenchido: null };
+        const anterior = opts.snapshot || (opts.editar ? st.escolhidas[chaveAlvo(opts.alvo)] : null);
+        const podeSalvar = typeof opts.aoSalvar === "function";
+        st.ctx = { valor: parseValor(opts.valor), rotulo: opts.rotulo || "Simulação livre", alvo: opts.alvo || null, permiteUsar: podeSalvar || (opts.permiteUsar !== false && st.papel !== "central"), aoUsar: opts.aoUsar, aoSalvar: podeSalvar ? opts.aoSalvar : null, textoUsar: opts.textoUsar || (podeSalvar ? "Salvar na proposta" : null), infoProposta: opts.infoProposta || null, condId: null, entradaPct: 20, entradaValor: 0, entradaParcelas: 1, prazo: 240, res: null, _balaoPreenchido: null };
         $q("#sklSimTitulo", d).textContent = st.ctx.rotulo;
         $q("#sklSimValor", d).value = st.ctx.valor > 0 ? brl(st.ctx.valor) : "";
+        // o preço do lote/unidade só a Central altera — no Corretor o valor vem da Central e fica travado
+        const campoValor = $q("#sklSimValor", d);
+        campoValor.readOnly = st.papel !== "central";
+        campoValor.title = campoValor.readOnly ? "Valor definido pela Central" : "";
+        campoValor.style.background = campoValor.readOnly ? "#f1f4f5" : "";
         const inicial = (anterior && st.condicoes.find((x) => String(x.id) === String(anterior.condicao_id))) || st.condicoes[0];
         if (anterior && String(inicial.id) === String(anterior.condicao_id) && Array.isArray(anterior.baloes) && anterior.baloes.length) {
             st.ctx._balaoPreenchido = anterior.baloes;
@@ -590,10 +660,111 @@
         escolherCondicao(inicial.id, false);
         if (anterior && String(inicial.id) === String(anterior.condicao_id)) {
             st.ctx.entradaPct = anterior.entrada_pct; st.ctx.entradaValor = anterior.entrada_valor; st.ctx.prazo = anterior.prazo_meses;
+            st.ctx.entradaParcelas = Number(anterior.entrada_parcelas) || 1;
             pintarEntrada(); pintarPrazo(); pintar();
         }
         if (typeof d.showModal === "function") { if (!d.open) d.showModal(); } else d.setAttribute("open", "");
         d.querySelector(".skl-sim-card").scrollTop = 0;
+    }
+
+    // ------------------------------------------------------------------ proposta impressa (Central)
+    // Tela cheia com a proposta (resumo + quadro completo de parcelas) e o botão "Imprimir / Salvar PDF".
+    // Fecha os diálogos abertos enquanto a proposta está na tela (senão o <dialog> modal fica por cima
+    // e a impressão sai só com uma página) e reabre os mesmos ao voltar.
+    const PRINT_CSS = `
+#sklSimPrintArea{position:fixed;inset:0;z-index:2147483000;overflow:auto;background:#d5dee6;-webkit-overflow-scrolling:touch}
+#sklSimPrintArea .pp-barra{position:sticky;top:0;display:flex;gap:10px;justify-content:center;flex-wrap:wrap;padding:10px;background:#0d2a3a;z-index:2}
+#sklSimPrintArea .pp-barra button{border:0;border-radius:10px;padding:11px 16px;font-weight:800;font-size:14px;cursor:pointer;min-height:44px}
+#sklSimPrintArea .pp-barra .pri{background:#E6B857;color:#3a2a00}
+#sklSimPrintArea .pp-barra .sec{background:#e9f0f3;color:#0d2a3a}
+#sklSimPrintArea .pp-doc{background:#fff;color:#1d2b30;max-width:820px;margin:18px auto 40px;padding:34px 38px;border-radius:6px;box-shadow:0 10px 40px rgba(0,0,0,.18);font-family:Inter,"Segoe UI",Arial,sans-serif;font-size:13px}
+#sklSimPrintArea h1{font-size:21px;margin:0 0 2px;color:#163D26}
+#sklSimPrintArea .pp-sub{color:#66777c;margin:0 0 16px}
+#sklSimPrintArea .pp-info{display:grid;grid-template-columns:1fr 1fr;gap:6px 18px;margin:0 0 16px;padding:12px 14px;border:1px solid #dfe6e9;border-radius:8px}
+#sklSimPrintArea .pp-info span{display:block;font-size:11px;color:#66777c}
+#sklSimPrintArea h2{font-size:14px;margin:18px 0 8px;color:#163D26;text-transform:uppercase;letter-spacing:.05em}
+#sklSimPrintArea table{width:100%;border-collapse:collapse;font-size:12px}
+#sklSimPrintArea th,#sklSimPrintArea td{padding:5px 6px;border-bottom:1px solid #e6ecee;text-align:right;white-space:nowrap}
+#sklSimPrintArea th:first-child,#sklSimPrintArea td:first-child{text-align:left}
+#sklSimPrintArea th{background:#f3f6f7;font-size:11px}
+#sklSimPrintArea .pp-dl{display:grid;grid-template-columns:1fr 1fr;gap:0 24px}
+#sklSimPrintArea .pp-dl div{display:flex;justify-content:space-between;gap:10px;border-bottom:1px dashed #dbe4e8;padding:4px 0}
+#sklSimPrintArea .pp-dl dt{color:#66777c}#sklSimPrintArea .pp-dl dd{margin:0;font-weight:700;text-align:right}
+#sklSimPrintArea .pp-aviso{margin-top:18px;font-size:11px;color:#66777c}
+#sklSimPrintArea .pp-ass{display:flex;gap:40px;margin-top:60px}#sklSimPrintArea .pp-ass div{flex:1;border-top:1px solid #333;padding-top:6px;text-align:center;font-size:11px}
+@media(max-width:600px){#sklSimPrintArea .pp-doc{padding:20px 16px;margin:10px 6px 30px}#sklSimPrintArea .pp-dl,#sklSimPrintArea .pp-info{grid-template-columns:1fr}}
+@media print{
+  body.sklsim-imprimindo>*:not(#sklSimPrintArea){display:none!important}
+  body.sklsim-imprimindo #sklSimPrintArea{position:static!important;overflow:visible!important;background:#fff!important}
+  #sklSimPrintArea .pp-barra{display:none!important}
+  #sklSimPrintArea .pp-doc{box-shadow:none!important;margin:0!important;max-width:none!important;padding:0!important}
+  #sklSimPrintArea tr{break-inside:avoid}
+}`;
+    let printReabrir = [];
+    function fecharProposta() {
+        const area = $q("#sklSimPrintArea");
+        if (area) area.remove();
+        document.body.classList.remove("sklsim-imprimindo");
+        const reabrir = printReabrir; printReabrir = [];
+        reabrir.forEach((dlg) => { try { if (!dlg.open) dlg.showModal(); } catch (e) {} });
+    }
+    async function imprimirProposta(snap, info) {
+        if (!snap) return;
+        info = info || {};
+        if (!$q("#sklSimPrintCss")) { const s = document.createElement("style"); s.id = "sklSimPrintCss"; s.textContent = PRINT_CSS; document.head.appendChild(s); }
+        if (!st.condicoes.length) await carregar();
+        // refaz o quadro completo a partir da condição (se ela ainda existir) e dos números salvos
+        const cond = st.condicoes.find((x) => String(x.id) === String(snap.condicao_id));
+        const res = cond ? calcular({ valor: snap.valor_imovel, entradaValor: snap.entrada_valor, prazo: snap.prazo_meses, baloes: snap.baloes || [], entradaParcelas: snap.entrada_parcelas || 1 }, cond, st.config) : null;
+        const hojeTxt = new Date().toLocaleDateString("pt-BR");
+        const dl = (pares) => `<dl class="pp-dl">${pares.map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join("")}</dl>`;
+        const resumo = [
+            ["Condição", esc(snap.condicao_nome)],
+            ["Sistema", snap.sistema === "sac" ? "SAC (parcelas decrescentes)" : "Price (parcelas fixas)"],
+            ["Valor do imóvel", brl(snap.valor_imovel)],
+            ["Entrada", entradaTxt(snap)],
+            ["Valor financiado", brl(snap.valor_financiado)],
+            ["Prazo", `${snap.prazo_meses} meses`],
+            ["Parcela", snap.sistema === "sac" && snap.parcela_final < snap.parcela_inicial - 0.005 ? `${brl(snap.parcela_inicial)} → ${brl(snap.parcela_final)}` : brl(snap.parcela_inicial)],
+            ["Juros", snap.taxa_aa > 0 ? `${fmtNum(snap.taxa_aa)}% a.a.` : "sem juros"]
+        ];
+        if (Array.isArray(snap.baloes) && snap.baloes.length) resumo.push(["Balão", balaoTexto(snap).replace(/^ · Balão /, "")]);
+        if (temCet(snap)) resumo.push(["CET", cetTxt(snap)]);
+        if (mostraTotais()) resumo.push(["Total pago", brl(snap.total_pago)]);
+        let entradaTabela = "";
+        const nEnt = Math.max(1, Number(snap.entrada_parcelas) || 1);
+        if (nEnt > 1) {
+            const vEnt = Number(snap.entrada_parcela_valor) || snap.entrada_valor / nEnt;
+            entradaTabela = `<h2>Entrada (${nEnt}x sem juros)</h2><table><thead><tr><th>Parcela da entrada</th><th>Valor</th></tr></thead><tbody>${Array.from({ length: nEnt }, (_, k) => `<tr><td>${k + 1}ª</td><td>${brl(vEnt)}</td></tr>`).join("")}</tbody></table>`;
+        }
+        const baloesTabela = Array.isArray(snap.baloes) && snap.baloes.length ? `<h2>Balões</h2><table><thead><tr><th>Mês</th><th>Valor</th></tr></thead><tbody>${snap.baloes.map((b) => `<tr><td>${b.mes}</td><td>${brl(b.valor)}</td></tr>`).join("")}</tbody></table>` : "";
+        const quadro = res && res.ok
+            ? `<h2>Quadro de parcelas</h2><table><thead><tr><th>Mês</th><th>Parcela</th><th>Juros</th><th>Amortização</th><th>Saldo</th></tr></thead><tbody>${res.tabela.map((r) => `<tr><td>${r.k}</td><td>${brl(r.parcela)}</td><td>${brl(r.juros)}</td><td>${brl(r.amort)}</td><td>${brl(r.saldo)}</td></tr>`).join("")}</tbody></table>`
+            : `<p class="pp-aviso">A condição usada nesta simulação não está mais cadastrada — o quadro de parcelas não pôde ser refeito.</p>`;
+        printReabrir = Array.from(document.querySelectorAll("dialog[open]"));
+        printReabrir.forEach((dlg) => { try { dlg.close(); } catch (e) {} });
+        const area = document.createElement("div");
+        area.id = "sklSimPrintArea";
+        area.innerHTML = `<div class="pp-barra"><button type="button" class="pri" data-pp="imprimir">Imprimir / Salvar PDF</button><button type="button" class="sec" data-pp="voltar">Voltar</button></div>
+<div class="pp-doc">
+  <h1>Proposta — ${esc(info.rotulo || snap.rotulo || "Simulação de financiamento")}</h1>
+  <p class="pp-sub">${esc(info.empreendimento || "")}${info.empreendimento ? " · " : ""}emitida em ${hojeTxt}</p>
+  <div class="pp-info"><div><span>Cliente</span><b>${esc(info.cliente || "—")}</b></div><div><span>Corretor</span><b>${esc(info.corretor || "—")}</b></div></div>
+  <h2>Resumo</h2>${dl(resumo)}
+  ${entradaTabela}${baloesTabela}${quadro}
+  <p class="pp-aviso">${esc((st.config && st.config.aviso_texto) || "Simulação meramente ilustrativa, sem valor de proposta ou aprovação de crédito.")}</p>
+  <div class="pp-ass"><div>Cliente</div><div>Empresa</div></div>
+</div>`;
+        document.body.appendChild(area);
+        area.querySelector('[data-pp="voltar"]').addEventListener("click", fecharProposta);
+        area.querySelector('[data-pp="imprimir"]').addEventListener("click", () => {
+            document.body.classList.add("sklsim-imprimindo");
+            if (window.NativeBridge && window.NativeBridge.printPage) { window.NativeBridge.printPage(); return; }
+            const limpar = () => { document.body.classList.remove("sklsim-imprimindo"); window.removeEventListener("afterprint", limpar); };
+            window.addEventListener("afterprint", limpar);
+            window.print();
+        });
+        area.scrollTop = 0;
     }
 
     // ------------------------------------------------------------------ bloco no formulário de reserva
@@ -634,6 +805,6 @@
         onEstado: (f) => { if (typeof f === "function") ouvintes.push(f); },
         escolhida: (alvo) => st.escolhidas[chaveAlvo(alvo)] || null,
         limparEscolhida: (alvo) => { delete st.escolhidas[chaveAlvo(alvo)]; renderBloco(); },
-        calcular, resumoHtml, resumoTexto, brl, parseValor, taxaMensal, entradaMinimaPct
+        calcular, resumoHtml, resumoTexto, brl, parseValor, taxaMensal, entradaMinimaPct, imprimirProposta
     };
 })();

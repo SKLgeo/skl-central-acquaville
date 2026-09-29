@@ -271,7 +271,18 @@
 
       <section id="page-settings" class="page"><div class="settings-grid"><form id="passwordForm" class="panel form-panel"><span class="eyebrow">SEGURANÇA</span><h2>Alterar minha senha</h2><label><span>Nova senha</span><input id="changedPasswordInput" type="password" required minlength="6" /></label><button class="primary-button">Alterar senha</button></form><div class="panel form-panel"><span class="eyebrow">EMPREENDIMENTO</span><h2 id="settingsEmpreendimentoNome">—</h2><p id="settingsEmpreendimentoTipo" class="muted-text">—</p><button id="switchEmpreendimentoButton" type="button" class="secondary-button full-width">Trocar empreendimento</button></div><div class="panel form-panel"><span class="eyebrow">SOBRE</span><h2>Versão instalada</h2><p id="appVersionText">—</p></div>
         <div class="panel form-panel admin-or-central" id="simuladorAdminPanel" hidden></div>
-        <div class="panel form-panel admin-only" id="cvcrmPanel">
+        <form class="panel form-panel admin-or-central" id="prazosReservaPanel" hidden>
+          <span class="eyebrow">RESERVAS</span>
+          <h2>Tempos da reserva</h2>
+          <p class="muted-text">Valem para os próximos pedidos dos corretores. Somente o administrador altera.</p>
+          <label><span>Tempo para a Central responder o pedido (minutos)</span><input id="prazoPedidoInput" type="number" inputmode="numeric" min="1" max="1440" required /></label>
+          <label><span>Tempo que a reserva aprovada fica ativa (minutos)</span><input id="prazoValidadeInput" type="number" inputmode="numeric" min="1" max="10080" required /></label>
+          <label><span>Bloqueio do corretor que não concluir a reserva no prazo (horas · 0 = sem bloqueio)</span><input id="prazoBloqueioInput" type="number" inputmode="numeric" min="0" max="720" required /></label>
+          <small id="prazosReservaResumo" class="muted-text"></small>
+          <button id="prazosReservaSalvar" class="primary-button admin-only" type="submit">Salvar tempos</button>
+          <div id="prazosReservaMessage" class="form-message" hidden></div>
+        </form>
+        <div class="panel form-panel" id="cvcrmPanel" hidden>
           <span class="eyebrow">INTEGRAÇÃO</span>
           <h2>CV CRM</h2>
           <p class="muted-text">Conecta este empreendimento ao CV CRM da construtora/incorporadora, só para leitura — disponibilidade e preço oficiais. O CV CRM continua sendo quem manda na gestão real; corretores nunca ganham poder de alterar nada por aqui.</p>
@@ -291,7 +302,7 @@
           <button id="cvcrmSincronizarPrecosButton" type="button" class="secondary-button full-width">Sincronizar preços (em lotes de 25)</button>
           <div id="cvcrmMessage" class="form-message" hidden></div>
         </div>
-        <div class="panel form-panel admin-only" id="contractTemplatePanel">
+        <div class="panel form-panel" id="contractTemplatePanel" hidden>
           <span class="eyebrow">FECHAMENTO E CONTRATO</span>
           <h2>Modelo de contrato</h2>
           <p class="muted-text">Modelo em HTML usado para gerar o contrato em PDF quando a Central completa os dados de fechamento de uma venda. Cole aqui o modelo fornecido pela imobiliária/construtora — enquanto isso não chega, use o modelo de exemplo.</p>
@@ -333,6 +344,7 @@
     </div>
     <label><span>CEP</span><input id="contractCepInput" /></label>
     <label><span>Forma de pagamento</span><select id="contractPaymentPlanInput"><option value="">Selecione...</option></select></label>
+    <div id="contractSimulacaoBox" class="request-simulacao" hidden></div>
     <div class="dialog-actions">
       <button id="saveContractDataButton" type="button" class="secondary-button">Salvar dados</button>
       <button id="generateContractButton" type="button" class="primary-button">Gerar contrato (PDF)</button>

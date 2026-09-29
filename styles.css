@@ -139,3 +139,4 @@ tr.unit-row-selected,#unitTableBody tr.unit-row-selected:hover{background:#eef6f
 #lotSimButton{margin-top:10px}
 .request-simulacao{margin:10px 0;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:#f4f9fc}
 .request-simulacao small{display:block;margin-top:6px;color:var(--muted)}
+.request-sim-acoes{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}.request-sim-acoes .secondary-button{padding:9px 12px;font-size:13px}

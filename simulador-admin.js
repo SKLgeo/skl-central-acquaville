@@ -231,7 +231,7 @@ dialog.sa-dlg::backdrop{background:rgba(7,31,59,.6)}
   <div id="saPreview"></div>
 </div>
 
-<div class="sa-sec"><h3>4 · Integração automática (banco ou parceiro)</h3>
+<div class="sa-sec" data-sec="integracao"><h3>4 · Integração automática (banco ou parceiro)</h3>
   <p class="sa-hint">Para quem quer que um banco, correspondente ou sistema envie as taxas sozinho: gere uma chave e entregue ao parceiro junto com o endereço abaixo. Ele envia as mesmas colunas da planilha (em JSON). Nenhum dado de cliente trafega nessa integração.</p>
   ${ehAdmin ? `<div class="sa-row"><button type="button" class="secondary-button" data-a="gerartoken">${A.tokenInfo && A.tokenInfo.existe ? "Gerar nova chave (invalida a atual)" : "Gerar chave de integração"}</button>${A.tokenInfo && A.tokenInfo.existe ? `<button type="button" class="row-button danger-button" data-a="revogartoken">Revogar chave</button>` : ""}</div>
   <p class="sa-hint">${A.tokenInfo && A.tokenInfo.existe ? `Chave ativa desde ${new Date(A.tokenInfo.criado_em).toLocaleString("pt-BR")}${A.tokenInfo.ultimo_uso ? ` · último uso ${new Date(A.tokenInfo.ultimo_uso).toLocaleString("pt-BR")}` : " · ainda não usada"}.` : "Nenhuma chave gerada."}</p><div id="saTokenBox"></div>` : `<p class="sa-hint">Somente o administrador gera a chave de integração.</p>`}
@@ -245,6 +245,7 @@ Content-Type: application/json
     "prazo_min_meses": 60, "prazo_max_meses": 420, "opcoes_prazo": [120,240,360],
     "seguro_mip_pct_mes": 0.03, "seguro_dfi_pct_mes": 0.01, "tarifa_mensal": 25 } ] }</div>
 </div>`;
+        if (A.opts && A.opts.ocultarIntegracao) { const sec = A.box.querySelector("[data-sec=integracao]"); if (sec) sec.remove(); }
         wire();
     }
 
@@ -271,7 +272,7 @@ Content-Type: application/json
         A.editandoId = cond ? cond.id : null;
         let d = $("#saCondDialog");
         if (!d) { d = document.createElement("dialog"); d.id = "saCondDialog"; d.className = "sa-dlg"; document.body.appendChild(d); }
-        const c = cond || { nome: "", tipo: "financiamento_bancario", banco: "", sistema: "price", taxa_aa: 11.49, tipo_taxa: "nominal", indexador: "TR", entrada_min_pct: 20, financiavel_max_pct: 80, prazo_min_meses: 60, prazo_max_meses: 420, opcoes_prazo: [120, 180, 240, 300, 360, 420], seguro_mip_pct_mes: 0.03, seguro_dfi_pct_mes: 0.01, tarifa_mensal: 25, vigencia_ate: "", fonte: "", observacao: "", ativo: true, permite_balao: false, balao_max_meses: 48, faixas_prazo: null };
+        const c = cond || { nome: "", tipo: "financiamento_bancario", banco: "", sistema: "price", taxa_aa: 11.49, tipo_taxa: "nominal", indexador: "TR", entrada_min_pct: 20, financiavel_max_pct: 80, prazo_min_meses: 60, prazo_max_meses: 420, opcoes_prazo: [120, 180, 240, 300, 360, 420], seguro_mip_pct_mes: 0.03, seguro_dfi_pct_mes: 0.01, tarifa_mensal: 25, vigencia_ate: "", fonte: "", observacao: "", ativo: true, permite_balao: false, balao_max_meses: 48, faixas_prazo: null, entrada_fixa: false, entrada_parcelas_max: 1, cet_fixo_aa: null, indexador_desde_parcela: null };
         const faixasTexto = (Array.isArray(c.faixas_prazo) ? c.faixas_prazo : []).map((f) => `${f.prazo_max_meses}:${f.taxa_mensal_pct}`).join("\n");
         const sel = (id, opts, v) => `<select id="${id}">${opts.map(([k, t]) => `<option value="${k}"${k === v ? " selected" : ""}>${t}</option>`).join("")}</select>`;
         d.innerHTML = `<div class="sa-cond"><button type="button" class="dialog-close" data-x="1" style="float:right">×</button><span class="eyebrow">SIMULADOR</span><h2>${cond ? "Editar condição" : "Nova condição"}</h2>
@@ -285,6 +286,10 @@ Content-Type: application/json
  <label>Indexador${sel("scIdx", [["nenhum", "Nenhum"], ["TR", "TR"], ["IPCA", "IPCA"], ["INCC", "INCC"], ["IGPM", "IGP-M"]], c.indexador)}</label>
  <label>Entrada mínima (%)<input id="scEntrada" inputmode="decimal" value="${esc(fmtNum(c.entrada_min_pct, 0))}"></label>
  <label>Financiamento máximo (% do imóvel)<input id="scFin" inputmode="decimal" value="${esc(fmtNum(c.financiavel_max_pct, 0))}"></label>
+ <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="scEntFixa" ${c.entrada_fixa ? "checked" : ""} style="width:auto;margin:0"> Entrada fixa (o corretor não altera o valor)</label>
+ <label>Entrada pode ser parcelada em até (vezes, sem juros)<input id="scEntParc" inputmode="numeric" value="${esc(c.entrada_parcelas_max || 1)}"></label>
+ <label>CET informado (% a.a. — opcional; em branco = calculado)<input id="scCet" inputmode="decimal" value="${c.cet_fixo_aa == null || c.cet_fixo_aa === "" ? "" : esc(fmtNum(c.cet_fixo_aa))}"></label>
+ <label>Indexador só a partir de quantas parcelas (opcional)<input id="scIdxDesde" inputmode="numeric" value="${esc(c.indexador_desde_parcela || "")}"></label>
  <label>Prazo mínimo (meses)<input id="scPmin" inputmode="numeric" value="${esc(c.prazo_min_meses)}"></label>
  <label>Prazo máximo (meses)<input id="scPmax" inputmode="numeric" value="${esc(c.prazo_max_meses)}"></label>
  <label style="grid-column:1/-1">Opções de prazo mostradas ao corretor (meses, separadas por vírgula)<input id="scOpcoes" value="${esc((c.opcoes_prazo || []).join(", "))}"></label>
@@ -310,7 +315,7 @@ Content-Type: application/json
                     const m = l.match(/^(\d+)\s*:\s*([\d.,]+)$/); if (!m) return null;
                     return { prazo_max_meses: Number(m[1]), taxa_mensal_pct: Number(m[2].replace(",", ".")) };
                 }).filter(Boolean);
-                const dados = { nome: g("#scNome"), tipo: g("#scTipo"), banco: g("#scBanco"), sistema: g("#scSistema"), taxa_aa: num(g("#scTaxa")), tipo_taxa: g("#scTipoTaxa"), indexador: g("#scIdx"), entrada_min_pct: num(g("#scEntrada")), financiavel_max_pct: num(g("#scFin")), prazo_min_meses: num(g("#scPmin")), prazo_max_meses: num(g("#scPmax")), opcoes_prazo: g("#scOpcoes").split(/[^\d]+/).filter(Boolean).map(Number), seguro_mip_pct_mes: num(g("#scMip")), seguro_dfi_pct_mes: num(g("#scDfi")), tarifa_mensal: num(g("#scTarifa")), vigencia_ate: g("#scVig") || null, fonte: g("#scFonte"), observacao: g("#scObs"), ativo: $("#scAtivo", d).checked, permite_balao: $("#scBalao", d).checked, balao_max_meses: num(g("#scBalaoMax")), faixas_prazo: faixas.length ? faixas : null };
+                const dados = { nome: g("#scNome"), tipo: g("#scTipo"), banco: g("#scBanco"), sistema: g("#scSistema"), taxa_aa: num(g("#scTaxa")), tipo_taxa: g("#scTipoTaxa"), indexador: g("#scIdx"), entrada_min_pct: num(g("#scEntrada")), financiavel_max_pct: num(g("#scFin")), prazo_min_meses: num(g("#scPmin")), prazo_max_meses: num(g("#scPmax")), opcoes_prazo: g("#scOpcoes").split(/[^\d]+/).filter(Boolean).map(Number), seguro_mip_pct_mes: num(g("#scMip")), seguro_dfi_pct_mes: num(g("#scDfi")), tarifa_mensal: num(g("#scTarifa")), vigencia_ate: g("#scVig") || null, fonte: g("#scFonte"), observacao: g("#scObs"), ativo: $("#scAtivo", d).checked, permite_balao: $("#scBalao", d).checked, balao_max_meses: num(g("#scBalaoMax")), faixas_prazo: faixas.length ? faixas : null, entrada_fixa: $("#scEntFixa", d).checked, entrada_parcelas_max: Math.min(12, Math.max(1, Math.round(num(g("#scEntParc")) || 1))), cet_fixo_aa: g("#scCet").trim() ? num(g("#scCet")) : null, indexador_desde_parcela: g("#scIdxDesde").trim() ? Math.max(1, Math.round(num(g("#scIdxDesde")))) : null };
                 Object.keys(dados).forEach((k) => { if (typeof dados[k] === "number" && Number.isNaN(dados[k])) dados[k] = null; });
                 try { await rpc("simulador_salvar_condicao", { p_empreendimento_id: A.empId, p_id: A.editandoId, p_dados: dados }); d.close(); toast("Condição salva."); await recarregarTudo(); }
                 catch (e) { const m = $("#scMsg", d); m.textContent = e.message; m.hidden = false; }
