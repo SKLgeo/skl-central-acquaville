@@ -63,6 +63,13 @@
     L.imageOverlay(opts.imagemUrl, bounds).addTo(map);
     map.setMaxBounds(bounds);
     map.fitBounds(bounds, { padding: [10, 10] });
+    // o tamanho do contêiner pode mudar logo depois de abrir (painel do editor, tela de celular):
+    // recalcula no próximo quadro para a imagem ocupar a área certa
+    setTimeout(function () {
+      if (!map._container || !map._container.isConnected) return;
+      map.invalidateSize();
+      map.fitBounds(bounds, { padding: [10, 10] });
+    }, 60);
 
     var marcadoresPorLote = new Map();
     var marcadoresPorPonto = new Map(); // ponto (referencia do objeto) -> L.Marker, só em modo editavel

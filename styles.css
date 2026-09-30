@@ -167,6 +167,7 @@ html,body{max-width:100%;overflow-x:hidden}
   .mapa3d-heading h2{font-size:15px;line-height:1.25}
   .mapa3d-legend{flex-wrap:wrap;justify-content:center;gap:8px 12px;width:calc(100% - 24px);bottom:12px;font-size:11px;border-radius:16px;padding:9px 12px}
   /* editor do mapa: painel embaixo (metade da tela) em vez de coluna de 320px cobrindo o mapa */
-  .editor-mapa-painel{top:auto;left:0;width:auto;height:48vh;padding:14px 14px 18px;border-radius:18px 18px 0 0;box-shadow:0 -10px 30px rgba(0,0,0,.25)}
-  .com-painel-editor{margin-right:0;margin-bottom:48vh}
+  .editor-mapa-painel{top:auto;left:0;width:auto;height:42vh;padding:14px 14px 18px;border-radius:18px 18px 0 0;box-shadow:0 -10px 30px rgba(0,0,0,.25)}
+  /* mesmo seletor (com #id) da regra de computador, senão ela vence e espreme o mapa em ~90px */
+  #mapa3dContainer.com-painel-editor{margin-right:0;margin-bottom:42vh}
 }
