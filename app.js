@@ -26,6 +26,9 @@
         "reserva.expired": "reserva venceu sem conclusão (lote liberado)",
         "reserva.block_released": "liberou o bloqueio de um corretor",
         "reserva.prazos_alterados": "alterou os tempos da reserva",
+        "mapa.imagem_substituida": "trocou a imagem do mapa interativo",
+        "user.phone_updated": "atualizou o celular (WhatsApp) de um usuário",
+        "user.access_renewed": "renovou o prazo de acesso de um usuário",
         "user.created_direct": "criou um acesso direto"
     };
     const SUPABASE_URL = "https://xigwlofqkmiibzbongkn.supabase.co";
@@ -38,7 +41,7 @@
     // uma conta com acesso múltiplo veria os empreendimentos de outro cliente
     // dentro do app com a marca da Acquaville.
     const SLUGS_PERMITIDOS = [ "acquaville" ];
-    const APP_VERSION = "0.4.1";
+    const APP_VERSION = "0.4.2";
     if ($("appVersionText")) $("appVersionText").textContent = `v${APP_VERSION}`;
     const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
         auth: {
@@ -167,6 +170,8 @@
         $("rejectRequestButton").addEventListener("click", () => reviewRequest("rejeitada"));
         $("newInviteButton").addEventListener("click", async () => {
             $("inviteResult").hidden = true;
+            $("inviteWhatsappLink").hidden = true;
+            $("inviteTelefoneInput").value = "";
             restrictRoleOptionsForCaller($("inviteRoleInput"));
             try {
                 renderEmpreendimentoChecklist("inviteEmpList", "inviteEmpAllInput", await listarEmpreendimentosParaGestao());
@@ -177,6 +182,7 @@
         });
         $("newDirectUserButton").addEventListener("click", async () => {
             $("directUserMessage").hidden = true;
+            $("directWhatsappLink").hidden = true;
             restrictRoleOptionsForCaller($("directRoleInput"));
             try {
                 renderEmpreendimentoChecklist("directEmpList", "directEmpAllInput", await listarEmpreendimentosParaGestao());
@@ -247,6 +253,8 @@
             $("passwordToggleButton").setAttribute("aria-label", mostrando ? "Mostrar senha" : "Ocultar senha");
         });
         $("confirmResetPasswordButton").addEventListener("click", confirmResetPassword);
+        $("savePhoneButton").addEventListener("click", salvarTelefoneUsuario);
+        $("saveRenewButton").addEventListener("click", salvarRenovacao);
         $("confirmDeleteUserButton").addEventListener("click", confirmDeleteUser);
         document.querySelectorAll(".dialog-close").forEach(button => {
             button.addEventListener("click", () => button.closest("dialog")?.close());
@@ -342,6 +350,7 @@
     }
     async function listarEmpreendimentosDoUsuario() {
         const {data: userData, error: userError} = await sb.auth.getUser();
+        if (userError && ehFalhaDeConexao(userError)) throw userError;
         if (userError || !userData?.user) throw new Error("Sessão inválida.");
         const uid = userData.user.id;
         pendingUser = {
@@ -428,6 +437,7 @@
         empreendimentoTipo = emp.tipo;
         empreendimentoNomeAtual = emp.nome;
         empreendimentoSlugAtual = emp.slug;
+        linksAcessoCache = null;
         currentUser = {
             ...pendingUser,
             papel: emp.papel
@@ -440,6 +450,7 @@
     }
     async function login(event) {
         event.preventDefault();
+        cancelarReconexao();
         try {
             const {error: loginError} = await sb.auth.signInWithPassword({
                 email: $("emailInput").value.trim(),
@@ -518,13 +529,50 @@
             showMessage($("activationMessage"), traduzErro(error.message));
         }
     }
+    // Falha de rede/servidor momentânea não pode derrubar a sessão: só desloga quando a
+    // sessão é de fato inválida ou o acesso não existe mais. Sem conexão, mantém a sessão
+    // salva e tenta de novo sozinho (e na hora em que o aparelho volta a ficar online).
+    let reconexaoTimer = null;
+    let reconexaoTentativa = 0;
+    function ehFalhaDeConexao(err) {
+        if (typeof navigator !== "undefined" && navigator.onLine === false) return true;
+        const nome = String(err?.name || "");
+        const msg = String(err?.message || err || "").toLowerCase();
+        return nome === "AuthRetryableFetchError" || err?.status === 0 || /failed to fetch|fetch failed|networkerror|network request failed|load failed|timeout|timed out|upstream|pgrst003|503|504/.test(msg);
+    }
+    function cancelarReconexao() {
+        clearTimeout(reconexaoTimer);
+        reconexaoTimer = null;
+        reconexaoTentativa = 0;
+    }
+    function aguardarReconexao() {
+        const espera = Math.min(30, 5 * 2 ** Math.min(reconexaoTentativa, 3));
+        reconexaoTentativa++;
+        $("appView").hidden = true;
+        $("empreendimentoPicker").hidden = true;
+        $("loginView").hidden = false;
+        showAuthForm(false);
+        showMessage($("loginMessage"), `Sem conexão com o servidor agora. Sua sessão continua salva — tentando entrar de novo em ${espera} s (não precisa digitar a senha).`);
+        clearTimeout(reconexaoTimer);
+        reconexaoTimer = setTimeout(() => restoreSession(), espera * 1000);
+    }
+    window.addEventListener("online", () => { if (reconexaoTimer) { clearTimeout(reconexaoTimer); reconexaoTimer = null; restoreSession(); } });
     async function restoreSession() {
-        if (modoRecuperacaoSenha) return;
+        if (modoRecuperacaoSenha || currentUser) return;
+        reconexaoTimer = null;
         try {
-            const {data: data} = await sb.auth.getSession();
+            const {data: data, error: sessaoErro} = await sb.auth.getSession();
+            if (sessaoErro && ehFalhaDeConexao(sessaoErro)) return aguardarReconexao();
             if (!data?.session) return logout();
             await resolverEmpreendimentoEEntrar();
-        } catch {
+            cancelarReconexao();
+            $("loginMessage").hidden = true;
+        } catch (error) {
+            if (ehFalhaDeConexao(error)) {
+                currentUser = null;
+                return aguardarReconexao();
+            }
+            cancelarReconexao();
             logout();
         }
     }
@@ -966,6 +1014,8 @@
     });
     $("editorSalvarButton").addEventListener("click", editorSalvarTudo);
     function logout() {
+        cancelarReconexao();
+        $("loginMessage").hidden = true;
         sb.auth.signOut();
         currentUser = null;
         empreendimentoId = null;
@@ -1589,6 +1639,7 @@
         const count = requests.filter(item => item.status === "pendente").length;
         $("requestCountBadge").textContent = count;
         $("requestCountBadge").hidden = count === 0;
+        if (typeof atualizarTituloPendentes === "function") atualizarTituloPendentes();
     }
     function requestTargetLabel(item) {
         return item.lote_id ? `Quadra ${h(item.quadra)} · Lote ${h(item.lote)}` : `Apto ${h(item.unidade?.numero)} · ${h(item.unidade?.andar)}º andar`;
@@ -2348,29 +2399,55 @@
             showMessage($("planRequestMessage"), traduzErro(error.message));
         }
     }
-    async function loadUsers() {
+async function loadUsers() {
         const empId = await empreendimentoIdAtual();
-        const {data: vinculos, error: error} = await sb.from("empreendimento_usuarios").select("usuario_id, papel, ativo, expira_em, perfis(nome_exibicao)").eq("empreendimento_id", empId);
+        const {data: vinculos, error: error} = await sb.from("empreendimento_usuarios").select("usuario_id, papel, ativo, expira_em, perfis(nome_exibicao, telefone)").eq("empreendimento_id", empId);
         if (error) {
             toast(error.message);
             return;
         }
+        const contatos = new Map;
+        try {
+            const {data: linhas} = await sb.rpc("listar_contatos_usuarios", { p_empreendimento_id: empId });
+            (linhas || []).forEach(l => contatos.set(l.usuario_id, l));
+        } catch {}
         users = vinculos.map(v => ({
             id: v.usuario_id,
             display_name: v.perfis?.nome_exibicao || "—",
             papel: v.papel,
             active: v.ativo,
-            expires_at: v.expira_em
+            expires_at: v.expira_em,
+            email: contatos.get(v.usuario_id)?.email || "",
+            telefone: contatos.get(v.usuario_id)?.telefone || v.perfis?.telefone || ""
         }));
         const {data: conviteRows} = await sb.from("convites").select("id, email, papel, expira_em").eq("empreendimento_id", empId).is("usado_em", null).gt("expira_em", (new Date).toISOString());
         invites = conviteRows || [];
         renderUsers();
     }
+    // Acesso com prazo que termina nos próximos 3 dias: a Central é avisada antes de o corretor ficar sem entrar.
+    const AVISO_VENCIMENTO_MS = 3 * 24 * 3600 * 1000;
+    function acessoVencendo(user) {
+        if (!user.active || !user.expires_at) return false;
+        const falta = new Date(user.expires_at).getTime() - Date.now();
+        return falta > 0 && falta <= AVISO_VENCIMENTO_MS;
+    }
+    function acessoExpirado(user) {
+        return !!(user.active && user.expires_at && new Date(user.expires_at).getTime() < Date.now());
+    }
+    function tempoAteVencer(iso) {
+        const min = Math.max(0, Math.round((new Date(iso).getTime() - Date.now()) / 60000));
+        if (min < 60) return `${min} min`;
+        const horas = Math.round(min / 60);
+        if (horas < 48) return `${horas} h`;
+        return `${Math.round(horas / 24)} dias`;
+    }
     function userStatusPill(user) {
         if (!user.active) return '<span class="status-pill vendido">Bloqueado</span>';
         if (user.expires_at) {
             const expired = new Date(user.expires_at).getTime() < Date.now();
-            return expired ? `<span class="status-pill vendido">Expirado</span>` : `<span class="status-pill reservado">Até ${h(formatDate(user.expires_at))}</span>`;
+            if (expired) return `<span class="status-pill vendido">Expirado</span>`;
+            if (acessoVencendo(user)) return `<span class="status-pill reservado vencendo">Vence em ${h(tempoAteVencer(user.expires_at))}</span><br><small>até ${h(formatDate(user.expires_at))}</small>`;
+            return `<span class="status-pill reservado">Até ${h(formatDate(user.expires_at))}</span>`;
         }
         return '<span class="status-pill disponivel">Ativo</span>';
     }
@@ -2379,34 +2456,88 @@
         if (currentUser.papel === "central_vendas") return user.papel === "corretor";
         return true;
     }
+function celulaWhatsApp(user) {
+        const podeEditar = canManage(user) || user.id === currentUser.id;
+        if (!user.telefone) return podeEditar ? `<button class="row-button" data-user-phone="${h(user.id)}">Adicionar celular</button>` : "—";
+        const editar = podeEditar ? ` <button class="text-button" data-user-phone="${h(user.id)}" title="Alterar celular">alterar</button>` : "";
+        const enviar = canManage(user) ? `<br><button class="row-button whatsapp" data-user-whats="${h(user.id)}">Enviar acesso</button>` : "";
+        return `<span style="white-space:nowrap">${h(formatarTelefone(user.telefone))}</span>${editar}${enviar}`;
+    }
     function renderUsers() {
         $("userTableBody").innerHTML = users.map(user => {
             if (!canManage(user)) {
-                return `<tr><td><strong>${h(user.display_name)}</strong></td><td>${h(user.email || "—")}</td><td>${h(ROLE[user.papel])}</td><td>${userStatusPill(user)}</td><td>—</td><td>${user.id === currentUser.id ? "Conta atual" : "—"}</td></tr>`;
+                return `<tr><td><strong>${h(user.display_name)}</strong></td><td>${h(user.email || "—")}</td><td>${celulaWhatsApp(user)}</td><td>${h(ROLE[user.papel])}</td><td>${userStatusPill(user)}</td><td>—</td><td>${user.id === currentUser.id ? "Conta atual" : "—"}</td></tr>`;
             }
             const toggleLabel = user.active ? "Desativar" : "Reativar";
-            return `<tr><td><strong>${h(user.display_name)}</strong></td><td>${h(user.email || "—")}</td><td>${h(ROLE[user.papel])}</td><td>${userStatusPill(user)}</td><td>—</td><td style="display:flex;gap:6px;flex-wrap:wrap"><button class="row-button" data-user-emp="${h(user.id)}" data-user-emp-name="${h(user.display_name)}">Empreendimentos</button><button class="row-button" data-user-reset="${h(user.id)}">Redefinir senha</button><button class="row-button" data-user-toggle="${h(user.id)}" data-next-active="${user.active ? "0" : "1"}">${toggleLabel}</button><button class="row-button danger-button" data-user-delete="${h(user.id)}" data-user-name="${h(user.display_name)}">Excluir</button></td></tr>`;
+            const expirado = user.expires_at && new Date(user.expires_at).getTime() < Date.now();
+            const vencendo = acessoVencendo(user);
+            const renovar = user.expires_at ? `<button class="row-button${expirado || vencendo ? " destaque" : ""}" data-user-renew="${h(user.id)}">${expirado ? "Novo prazo / liberar" : vencendo ? "Renovar prazo" : "Alterar prazo"}</button>` : "";
+            return `<tr><td><strong>${h(user.display_name)}</strong></td><td>${h(user.email || "—")}</td><td>${celulaWhatsApp(user)}</td><td>${h(ROLE[user.papel])}</td><td>${userStatusPill(user)}</td><td>—</td><td style="display:flex;gap:6px;flex-wrap:wrap">${renovar}<button class="row-button" data-user-emp="${h(user.id)}" data-user-emp-name="${h(user.display_name)}">Empreendimentos</button><button class="row-button" data-user-reset="${h(user.id)}">Redefinir senha</button><button class="row-button" data-user-toggle="${h(user.id)}" data-next-active="${user.active ? "0" : "1"}">${toggleLabel}</button><button class="row-button danger-button" data-user-delete="${h(user.id)}" data-user-name="${h(user.display_name)}">Excluir</button></td></tr>`;
         }).join("");
         $("userTableBody").querySelectorAll("[data-user-emp]").forEach(button => button.addEventListener("click", () => openUserEmpreendimentosDialog(button.dataset.userEmp, button.dataset.userEmpName)));
         $("userTableBody").querySelectorAll("[data-user-reset]").forEach(button => button.addEventListener("click", () => resetUser(button.dataset.userReset)));
         $("userTableBody").querySelectorAll("[data-user-toggle]").forEach(button => button.addEventListener("click", () => toggleUserStatus(button.dataset.userToggle, button.dataset.nextActive === "1")));
         $("userTableBody").querySelectorAll("[data-user-delete]").forEach(button => button.addEventListener("click", () => deleteUser(button.dataset.userDelete, button.dataset.userName)));
+        $("userTableBody").querySelectorAll("[data-user-phone]").forEach(button => button.addEventListener("click", () => abrirDialogoTelefone(button.dataset.userPhone)));
+        $("userTableBody").querySelectorAll("[data-user-whats]").forEach(button => button.addEventListener("click", () => enviarAcessoWhatsApp(button.dataset.userWhats)));
+        $("userTableBody").querySelectorAll("[data-user-renew]").forEach(button => button.addEventListener("click", () => abrirDialogoRenovar(button.dataset.userRenew)));
+        const vencendoQtd = users.filter(u => canManage(u) && acessoVencendo(u)).length;
+        const expiradoQtd = users.filter(u => canManage(u) && acessoExpirado(u)).length;
+        const partes = [];
+        if (vencendoQtd) partes.push(`${vencendoQtd} ${vencendoQtd === 1 ? "acesso vence" : "acessos vencem"} nos próximos 3 dias`);
+        if (expiradoQtd) partes.push(`${expiradoQtd} ${expiradoQtd === 1 ? "acesso já expirou" : "acessos já expiraram"}`);
+        $("usersPrazoAviso").hidden = !partes.length;
+        $("usersPrazoAviso").textContent = partes.length ? `${partes.join(" e ")}. Use "Renovar prazo" ou "Novo prazo / liberar" na lista abaixo.` : "";
+        const navUsuarios = document.querySelector('[data-page="users"]');
+        if (navUsuarios) {
+            let selo = navUsuarios.querySelector("b.prazo-selo");
+            const total = vencendoQtd + expiradoQtd;
+            if (total && !selo) {
+                selo = document.createElement("b");
+                selo.className = "prazo-selo";
+                navUsuarios.append(selo);
+            }
+            if (selo) {
+                selo.textContent = String(total);
+                selo.title = "Acessos vencendo ou expirados";
+                selo.hidden = !total;
+            }
+        }
+        const semCelular = users.filter(u => canManage(u) && !u.telefone).length;
+        $("usersSemTelefoneAviso").hidden = !semCelular;
+        $("usersSemTelefoneAviso").textContent = semCelular ? `${semCelular} ${semCelular === 1 ? "usuário ainda está" : "usuários ainda estão"} sem celular cadastrado. Toque em "Adicionar celular" para poder enviar o acesso pelo WhatsApp.` : "";
         $("inviteList").innerHTML = invites.length ? invites.map(invite => `<div class="invite-row"><span><strong>${h(invite.email)}</strong><br><small>${h(ROLE[invite.papel])} · expira ${h(formatDate(invite.expira_em))}</small></span><code class="invite-code">${h(invite.token || "")}</code></div>`).join("") : '<div class="empty-state">Nenhum convite pendente.</div>';
     }
-    async function createInvite() {
+async function createInvite() {
         const slugs = selectedEmpreendimentoSlugs("inviteEmpList");
         if (!slugs.length) return showMessage($("inviteResult"), "Selecione ao menos um empreendimento.");
+        const telefone = $("inviteTelefoneInput").value.trim();
+        if (!telefoneValido(telefone)) return showMessage($("inviteResult"), "Informe o celular (WhatsApp) com DDD, ex.: (66) 99999-0000.");
+        $("inviteWhatsappLink").hidden = true;
         try {
+            const nome = $("inviteNameInput").value;
+            const papel = $("inviteRoleInput").value;
             const data = await invokeConvites({
                 action: "criar_convite",
                 empreendimento_slugs: slugs,
-                display_name: $("inviteNameInput").value,
+                display_name: nome,
                 cpf: $("inviteCpfInput").value.trim() || null,
-                papel: $("inviteRoleInput").value
+                papel: papel
             });
+            let avisoTelefone = "";
+            try {
+                const {error: telError} = await sb.rpc("definir_telefone_convite", { p_convite_id: data.convite.id, p_telefone: telefone });
+                if (telError) throw telError;
+            } catch (telErro) {
+                avisoTelefone = `<br><small>Não foi possível salvar o celular: ${h(traduzErro(telErro.message))}</small>`;
+            }
             await loadUsers();
-            $("inviteResult").innerHTML = `Código: <strong>${h(data.convite.token)}</strong><br><small>Envie este código somente à pessoa autorizada.</small>`;
+            $("inviteResult").innerHTML = `Código: <strong>${h(data.convite.token)}</strong><br><small>Envie este código somente à pessoa autorizada.</small>${avisoTelefone}`;
+            $("inviteResult").style.background = "";
+            $("inviteResult").style.color = "";
             $("inviteResult").hidden = false;
+            const texto = await mensagemAcessoWhatsApp({ nome: nome, papel: papel, codigo: data.convite.token });
+            botaoWhatsApp($("inviteWhatsappLink"), linkWhatsApp(telefone, texto));
         } catch (error) {
             showMessage($("inviteResult"), traduzErro(error.message));
         }
@@ -2418,30 +2549,169 @@
         });
         if (onlyCorretor) selectEl.value = "corretor";
     }
-    async function createDirectUser() {
+async function createDirectUser() {
         const slugs = selectedEmpreendimentoSlugs("directEmpList");
         if (!slugs.length) return showMessage($("directUserMessage"), "Selecione ao menos um empreendimento.");
+        const telefone = $("directTelefoneInput").value.trim();
+        if (!telefoneValido(telefone)) return showMessage($("directUserMessage"), "Informe o celular (WhatsApp) com DDD, ex.: (66) 99999-0000.");
         const validadeRaw = $("directExpiryInput").value;
+        $("directWhatsappLink").hidden = true;
         try {
+            const nome = $("directNameInput").value;
+            const email = $("directEmailInput").value;
+            const papel = $("directRoleInput").value;
             const data = await invokeConvites({
                 action: "criar_usuario_direto",
                 empreendimento_slugs: slugs,
-                display_name: $("directNameInput").value,
+                display_name: nome,
                 cpf: $("directCpfInput").value.trim() || null,
-                email: $("directEmailInput").value,
+                email: email,
                 password: $("directPasswordInput").value,
-                papel: $("directRoleInput").value,
+                papel: papel,
                 validade_horas: validadeRaw ? Number(validadeRaw) : null
             });
+            let avisoTelefone = "";
+            if (data.usuario_id) {
+                const {error: telError} = await sb.rpc("definir_telefone_usuario", { p_empreendimento_id: empreendimentoId, p_usuario_id: data.usuario_id, p_telefone: telefone });
+                if (telError) avisoTelefone = " (O celular não foi salvo — adicione depois na lista de usuários.)";
+            }
             await loadUsers();
             const reaproveitado = data.reused_existing_account ? " (e-mail já tinha conta em outro empreendimento — vinculamos direto, mesma senha de sempre.)" : "";
-            showMessage($("directUserMessage"), (data.expira_em ? `Acesso criado — expira em ${formatDate(data.expira_em)}.` : "Acesso criado sem prazo de validade.") + reaproveitado, true);
+            showMessage($("directUserMessage"), (data.expira_em ? `Acesso criado — expira em ${formatDate(data.expira_em)}.` : "Acesso criado sem prazo de validade.") + reaproveitado + avisoTelefone, true);
+            const texto = await mensagemAcessoWhatsApp({ nome: nome, papel: papel, email: email, contaReaproveitada: !!data.reused_existing_account });
+            botaoWhatsApp($("directWhatsappLink"), linkWhatsApp(telefone, texto));
             $("directNameInput").value = "";
             $("directCpfInput").value = "";
             $("directEmailInput").value = "";
             $("directPasswordInput").value = "";
+            $("directTelefoneInput").value = "";
         } catch (error) {
             showMessage($("directUserMessage"), traduzErro(error.message));
+        }
+    }
+    // ===== Celular (WhatsApp) do usuário + renovar prazo de acesso =====
+    // O e-mail de boas-vindas continua saindo como sempre (Edge Function convites);
+    // o WhatsApp é um caminho a mais: abre o WhatsApp de quem cadastra com a mensagem pronta.
+    // Senha nunca vai na mensagem.
+    const LINK_ACESSO_PADRAO = { corretor: "https://corretor-acquaville.sklgeosolucoes.com.br", central: "https://central-acquaville.sklgeosolucoes.com.br", emailComSenha: true };
+    let linksAcessoCache = null;
+    async function linksDeAcesso() {
+        if (linksAcessoCache) return linksAcessoCache;
+        let cfg = null;
+        try {
+            const {data: data} = await sb.from("empreendimentos").select("config").eq("id", empreendimentoId).maybeSingle();
+            cfg = data?.config?.email_boas_vindas || null;
+        } catch {}
+        linksAcessoCache = {
+            corretor: cfg?.link_corretor || LINK_ACESSO_PADRAO.corretor,
+            central: cfg?.link_central || LINK_ACESSO_PADRAO.central,
+            emailComSenha: LINK_ACESSO_PADRAO.emailComSenha || cfg?.ativo === true
+        };
+        return linksAcessoCache;
+    }
+    function telefoneDigitos(valor) {
+        let d = String(valor || "").replace(/\D/g, "");
+        if (d.startsWith("55") && (d.length === 12 || d.length === 13)) d = d.slice(2);
+        return d;
+    }
+    function telefoneValido(valor) {
+        const d = telefoneDigitos(valor);
+        return d.length === 10 || d.length === 11;
+    }
+    function formatarTelefone(valor) {
+        const d = telefoneDigitos(valor);
+        if (d.length === 11) return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
+        if (d.length === 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
+        return valor || "";
+    }
+    function linkWhatsApp(telefone, texto) {
+        return `https://wa.me/55${telefoneDigitos(telefone)}?text=${encodeURIComponent(texto)}`;
+    }
+    async function mensagemAcessoWhatsApp({nome: nome, papel: papel, email: email, codigo: codigo, contaReaproveitada: contaReaproveitada, reenvio: reenvio}) {
+        const links = await linksDeAcesso();
+        const ehCorretor = papel === "corretor";
+        const link = ehCorretor ? links.corretor : links.central;
+        const app = ehCorretor ? "App do Corretor" : "Central de Vendas";
+        const primeiro = String(nome || "").trim().split(/\s+/)[0] || "";
+        const linhas = [ `Olá${primeiro ? ", " + primeiro : ""}! ${reenvio ? "Aqui está o seu acesso" : "Seu acesso foi criado"}: ${app} — ${empreendimentoNomeAtual}.`, "" ];
+        if (link) linhas.push(`Acesse: ${link}`);
+        if (codigo) {
+            linhas.push(`Toque em "Tenho um código de primeiro acesso" e use o código: ${codigo}`);
+            linhas.push("Você mesmo vai criar a sua senha.");
+        } else {
+            if (email) linhas.push(`Login (e-mail): ${email}`);
+            if (contaReaproveitada) linhas.push("Senha: a mesma que você já usa.");
+            else if (reenvio) linhas.push("Senha: a que você já recebeu. Se não lembrar, peça à Central para redefinir.");
+            else linhas.push(links.emailComSenha ? "Senha: enviada para o seu e-mail." : "Senha: a Central vai te passar.");
+        }
+        linhas.push("", "Qualquer dúvida, fale com a Central.");
+        return linhas.join("\n");
+    }
+    function botaoWhatsApp(elemento, href) {
+        elemento.href = href;
+        elemento.hidden = false;
+    }
+    let phoneDialogUser = null;
+    function abrirDialogoTelefone(userId) {
+        const user = users.find(u => u.id === userId);
+        if (!user) return;
+        phoneDialogUser = user;
+        $("phoneUserName").textContent = user.display_name;
+        $("phoneInput").value = user.telefone ? formatarTelefone(user.telefone) : "";
+        $("phoneMessage").hidden = true;
+        $("phoneDialog").showModal();
+    }
+    async function salvarTelefoneUsuario() {
+        if (!phoneDialogUser) return;
+        const valor = $("phoneInput").value.trim();
+        if (valor && !telefoneValido(valor)) return showMessage($("phoneMessage"), "Celular inválido. Informe DDD + número, ex.: (66) 99999-0000.");
+        try {
+            const {error: error} = await sb.rpc("definir_telefone_usuario", {
+                p_empreendimento_id: empreendimentoId,
+                p_usuario_id: phoneDialogUser.id,
+                p_telefone: valor || null
+            });
+            if (error) throw error;
+            $("phoneDialog").close();
+            toast(valor ? "Celular salvo." : "Celular removido.");
+            await loadUsers();
+        } catch (error) {
+            showMessage($("phoneMessage"), traduzErro(error.message));
+        }
+    }
+    async function enviarAcessoWhatsApp(userId) {
+        const user = users.find(u => u.id === userId);
+        if (!user?.telefone) return abrirDialogoTelefone(userId);
+        const texto = await mensagemAcessoWhatsApp({ nome: user.display_name, papel: user.papel, email: user.email, reenvio: true });
+        window.open(linkWhatsApp(user.telefone, texto), "_blank", "noopener");
+    }
+    let renewDialogUser = null;
+    function abrirDialogoRenovar(userId) {
+        const user = users.find(u => u.id === userId);
+        if (!user) return;
+        renewDialogUser = user;
+        $("renewUserName").textContent = user.display_name;
+        const expirado = user.expires_at && new Date(user.expires_at).getTime() < Date.now();
+        $("renewSituacao").textContent = user.expires_at ? (expirado ? `O acesso expirou em ${formatDate(user.expires_at)}.` : `O acesso vale até ${formatDate(user.expires_at)}.`) : "O acesso está sem prazo.";
+        $("renewExpiryInput").value = "24";
+        $("renewMessage").hidden = true;
+        $("renewDialog").showModal();
+    }
+    async function salvarRenovacao() {
+        if (!renewDialogUser) return;
+        const bruto = $("renewExpiryInput").value;
+        try {
+            const {data: data, error: error} = await sb.rpc("renovar_acesso_usuario", {
+                p_empreendimento_id: empreendimentoId,
+                p_usuario_id: renewDialogUser.id,
+                p_validade_horas: bruto ? Number(bruto) : null
+            });
+            if (error) throw error;
+            $("renewDialog").close();
+            toast(data ? `Acesso liberado até ${formatDate(data)}.` : "Acesso liberado sem prazo.");
+            await loadUsers();
+        } catch (error) {
+            showMessage($("renewMessage"), traduzErro(error.message));
         }
     }
     async function toggleUserStatus(userId, nextActive) {
@@ -2803,4 +3073,47 @@
             loadRequests();
         }).subscribe(status => setConnection(status === "SUBSCRIBED"));
     }
+    // Pedidos novos mesmo quando o tempo real "dorme": com o app em segundo plano, a tela apagada
+    // ou a internet oscilando, o canal do Realtime cai e a lista ficava velha até tocar em
+    // "Atualizar". Agora a Central confere de novo ao voltar para o app, ao reconectar a internet
+    // e a cada minuto enquanto está aberta; se chegou pedido novo nesse meio tempo, avisa
+    // (som, notificação e aviso na tela) e reabre o canal do Realtime se ele tiver caído.
+    const TITULO_BASE = document.title;
+    let conferindoPedidos = false;
+    let ultimaConferenciaPedidos = 0;
+    function pendentesAtuais() {
+        return new Set(requests.filter(item => item.status === "pendente").map(item => item.id));
+    }
+    function atualizarTituloPendentes() {
+        const qtd = requests.filter(item => item.status === "pendente").length;
+        document.title = qtd ? `(${qtd}) ${TITULO_BASE}` : TITULO_BASE;
+    }
+    async function conferirPedidosNovos() {
+        if (!currentUser || !empreendimentoId || conferindoPedidos) return;
+        if (Date.now() - ultimaConferenciaPedidos < 5000) return;
+        conferindoPedidos = true;
+        ultimaConferenciaPedidos = Date.now();
+        try {
+            const antes = pendentesAtuais();
+            await loadRequests();
+            const novos = [ ...pendentesAtuais() ].filter(id => !antes.has(id)).length;
+            if (novos) {
+                toast(novos === 1 ? "Chegou 1 solicitação nova de corretor." : `Chegaram ${novos} solicitações novas de corretores.`);
+                notify("Nova solicitação", novos === 1 ? "Um corretor enviou uma solicitação." : `${novos} solicitações novas aguardando análise.`);
+            }
+            const estado = realtimeChannel && realtimeChannel.state;
+            if (!realtimeChannel || estado === "closed" || estado === "errored") connectRealtime();
+        } catch {} finally {
+            conferindoPedidos = false;
+            atualizarTituloPendentes();
+        }
+    }
+    document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") conferirPedidosNovos();
+    });
+    window.addEventListener("focus", () => conferirPedidosNovos());
+    window.addEventListener("online", () => conferirPedidosNovos());
+    setInterval(() => {
+        if (document.visibilityState === "visible") conferirPedidosNovos();
+    }, 60000);
 })();

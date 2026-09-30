@@ -8,7 +8,8 @@
  * Marca: por empreendimento em  empreendimentos.config.marca_relatorio  =
  *   { "nome": "Nome da empresa", "slogan": "...", "logo": "<data:image/png;base64,... ou https://...>",
  *     "cor_primaria": "#0a2a4a", "cor_secundaria": "#0b4f78", "cor_destaque": "#29abe2", "cor_ouro": "#c9a227",
- *     "rodape": "texto do rodapé", "mostrar_selo_skl": false }
+ *     "rodape": "texto do rodapé", "mostrar_selo_skl": false,
+ *     "logo_fundo": "#163D26" }   (opcional: cor atrás da logo — use quando a logo for clara/branca)
  * Sem esse campo, sai com a marca SKL Soluções Digitais.
  *
  * Formato dos dados (D): { vendas:[{tipo_imovel:"Lote"|"Apartamento", empreendimento, imovel, valor, corretor, cliente, origem, data,
@@ -77,7 +78,6 @@
     function cssBase(M) {
         return `
 :root{--p:${M.cor_primaria};--s:${M.cor_secundaria};--d:${M.cor_destaque};--o:${M.cor_ouro};--tx:#12263a;--mut:#5b6f82;--bg:#eef4fa;--ln:#d6e2ee}
-@page{size:A4;margin:22mm 14mm 18mm 14mm}
 *{box-sizing:border-box}html{-webkit-print-color-adjust:exact;print-color-adjust:exact}
 body{font-family:"Segoe UI",Arial,sans-serif;color:var(--tx);font-size:9.6pt;line-height:1.42;margin:0}
 .cab{position:fixed;top:-16mm;left:0;right:0;height:11mm;display:flex;justify-content:space-between;align-items:center;border-bottom:.5mm solid var(--d)}
@@ -104,7 +104,24 @@ tr:nth-child(even) td{background:#f5f9fd}td.r,th.r{text-align:right;white-space:
 .capa img{width:118mm;max-width:100%;background:#fff;border-radius:3mm;padding:2mm}.capa h1{color:#fff;font-size:31pt;line-height:1.1;margin:0 0 4mm}.capa .fx{width:38mm;height:1.6mm;background:var(--o);margin:5mm 0}
 .capa p{margin:0;font-size:11.5pt;opacity:.95}.capa .pill{display:inline-block;margin-top:6mm}
 .capa .info{font-size:9pt;opacity:.9;border-top:.3mm solid rgba(255,255,255,.35);padding-top:4mm}
-`;
+${M.logo_fundo ? `.cab img{background:${M.logo_fundo};padding:1mm 2.5mm;border-radius:1.5mm;height:10mm}
+.capa img{background:${M.logo_fundo};padding:4mm 6mm;width:100mm}
+` : ""}`;
+    }
+
+    // Cabeçalho/rodapé da impressão: margens de página nativas (@page + @top-left etc.). Antes eram
+    // divs position:fixed com deslocamento negativo, e o Chromium desenhava o cabeçalho no pé da página
+    // e o rodapé no topo da seguinte, por cima do conteúdo. As divs .cab/.rod ficam só na prévia de tela.
+    function cssPagina(M) {
+        const q = (t) => JSON.stringify(String(t || ""));
+        const txt = "font-family:\"Segoe UI\",Arial,sans-serif;font-size:7.6pt;color:#5b6f82";
+        return `@page{size:A4;margin:20mm 14mm 17mm 14mm;
+@top-left{content:${q(String(M.nome || "").toUpperCase())};${txt};letter-spacing:.12em;vertical-align:bottom;padding-bottom:2.5mm;border-bottom:.5mm solid ${M.cor_destaque}}
+@top-right{content:"";vertical-align:bottom;padding-bottom:2.5mm;border-bottom:.5mm solid ${M.cor_destaque}}
+@bottom-left{content:${q(M.rodape)};${txt};vertical-align:top;padding-top:2mm;border-top:.25mm solid #d6e2ee}
+@bottom-right{content:${q(M.mostrar_selo_skl ? "Tecnologia SKL Soluções Digitais · " : "")} "página " counter(page) " de " counter(pages);${txt};vertical-align:top;padding-top:2mm;border-top:.25mm solid #d6e2ee}}
+@page:first{@top-left{content:none;border:0}@top-right{content:none;border:0}}
+@media print{.cab,.rod{display:none!important}}`;
     }
 
     // prefixa todos os seletores com um escopo (para embutir na Central sem afetar o resto da página)
@@ -192,7 +209,7 @@ ${R.length ? tabela(["#", "Corretor(a)", "Vendas", "Lotes", "Aptos", "%", "Valor
             R.map((r) => [r.posicao, esc(r.corretor), r.vendas, r.lotes, r.apartamentos, dec(r.percentual).replace(",00", "") + "%", brl(r.valor_vendido), `<b>${brl(r.comissao)}</b>`, brl(r.pendente), brl(r.aprovada), brl(r.paga)]), [2, 3, 4, 5, 6, 7, 8, 9, 10]) : semVendas}
 <div class="nota">Comissão = valor da venda × percentual do corretor. Percentuais são definidos no cadastro de cada corretor e podem variar conforme o contrato de cada empresa.</div>`);
 
-        const css = escopar(cssBase(M), S);
+        const css = escopar(cssBase(M), S) + "\n" + cssPagina(M);
         return { css, executivo, vendas, ranking, csv: montarCsv(D), marca: M };
     }
 
@@ -232,7 +249,6 @@ ${R.length ? tabela(["#", "Corretor(a)", "Vendas", "Lotes", "Aptos", "%", "Valor
   body.rm-imprimindo #rm-overlay{display:block!important;position:static!important;background:#fff!important;overflow:visible!important}
   body.rm-imprimindo #rm-bar{display:none!important}
   body.rm-imprimindo #rm-doc{max-width:none;margin:0;padding:0;box-shadow:none}
-  body.rm-imprimindo #rm-doc .cab,body.rm-imprimindo #rm-doc .rod{position:fixed}
 }`;
 
         function garantirOverlay() {
