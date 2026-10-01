@@ -198,3 +198,5 @@ td .row-button.destaque{background:#fff0cb;color:#80540a}
 
 /* Mapa interativo: fundo verde igual ao do mapa (antes branco/cinza em volta da imagem) */
 .mapa3d-container,.mapa3d-container .leaflet-container{background:#b3bc63}
+@media(max-width:1180px){.commission-rules-grid{grid-template-columns:1fr}}
+.commission-rules-grid input.regra-percentual{width:84px}
