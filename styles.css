@@ -179,3 +179,22 @@ td .row-button.whatsapp{background:#25D366;color:#073b1f;margin-top:5px}
 td .row-button.destaque{background:#fff0cb;color:#80540a}
 .warning-banner.prazo{background:#fdecea;color:#8a2f28;border-color:#f1c4bf}
 .status-pill.vencendo{background:#ffe1b3;color:#7a4300}
+
+/* Regras de comissão com texto livre */
+.commission-rules-grid input.regra-rotulo{width:100%;min-width:140px;padding:8px 9px}
+.commission-rules-grid td:last-child{width:34px;padding-left:0;padding-right:0;text-align:center}
+.commission-rules-grid .regra-remover{color:#9c3931;font-size:20px;line-height:1;padding:4px 8px}
+.commission-rules-grid [data-add-rule]{margin-top:6px}
+
+/* Meu plano: usuários ativos X/limite */
+.plano-uso{margin:6px 0 16px;padding:14px 16px;border:1px solid var(--line);border-radius:14px;background:#faf7f2}
+.plano-uso-topo{display:flex;justify-content:space-between;align-items:baseline;gap:10px;font-weight:700;color:var(--muted)}
+.plano-uso-topo strong{font-size:28px;color:var(--navy)}
+.plano-uso-barra{height:12px;border-radius:99px;background:#ece5da;overflow:hidden;margin:10px 0 8px}
+.plano-uso-barra i{display:block;height:100%;width:0;border-radius:99px;background:var(--success);transition:width .4s}
+.plano-uso-barra i.quase{background:var(--warning)}
+.plano-uso-barra i.cheio{background:var(--danger)}
+.plano-uso small{color:var(--muted);font-size:12px}
+
+/* Mapa interativo: fundo verde igual ao do mapa (antes branco/cinza em volta da imagem) */
+.mapa3d-container,.mapa3d-container .leaflet-container{background:#b3bc63}

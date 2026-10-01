@@ -194,10 +194,18 @@
             <div><span class="eyebrow">PACOTE CONTRATADO</span><h2 id="planNameText">—</h2></div>
             <button id="requestPlanButton" class="primary-button">Solicitar mudança de pacote</button>
           </div>
+          <div class="plano-uso">
+            <div class="plano-uso-topo"><span>Usuários ativos no pacote</span><strong id="planUsuariosUsados">—</strong></div>
+            <div class="plano-uso-barra"><i id="planUsoBarra"></i></div>
+            <small id="planUsoTexto">Desativados e acessos com prazo vencido não contam. Com o pacote cheio, cadastros novos entram inativos e só podem ser ativados quando houver vaga.</small>
+          </div>
           <div class="metric-grid metric-grid-3">
             <div class="metric-card"><span>Corretores ativos</span><strong id="planCorretoresUsados">—</strong></div>
+            <div class="metric-card"><span>Centrais ativas</span><strong id="planCentraisAtivas">—</strong></div>
+            <div class="metric-card"><span>Usuários inativos</span><strong id="planInativos">—</strong></div>
             <div class="metric-card"><span>Limite do pacote</span><strong id="planCorretoresLimite">—</strong></div>
             <div class="metric-card"><span>Mensalidade atual</span><strong id="planValorMensal">—</strong></div>
+            <div class="metric-card"><span>Vencimento</span><strong id="planVencimento">—</strong></div>
           </div>
         </div>
         <article class="panel">
@@ -220,15 +228,17 @@
         <div class="page-actions"><p>Controle de comissão por venda. Cada corretor só enxerga a própria comissão no App Corretor.</p><button id="newCommissionButton" class="primary-button">Registrar comissão</button></div>
 
         <div class="panel" id="commissionRulesPanel">
-          <div class="page-actions"><p><strong>Regras de comissão</strong> — percentual sugerido conforme a condição de pagamento e o tipo de entrada fechados na proposta. Ao registrar uma comissão, escolher essas duas opções já preenche o percentual (dá pra sobrescrever por lançamento).</p></div>
+          <div class="page-actions"><p><strong>Regras de comissão</strong> — percentual sugerido conforme a condição de pagamento e o tipo de entrada fechados na proposta. Ao registrar uma comissão, escolher essas duas opções já preenche o percentual (dá pra sobrescrever por lançamento). O texto de cada regra pode ser editado livremente.</p></div>
           <div class="commission-rules-grid">
             <div>
               <h3>Por condição de pagamento</h3>
-              <table><thead><tr><th>Condição</th><th>% comissão</th></tr></thead><tbody id="commissionRulesCondicaoBody"></tbody></table>
+              <table><thead><tr><th>Condição</th><th>% comissão</th><th></th></tr></thead><tbody id="commissionRulesCondicaoBody"></tbody></table>
+              <button type="button" class="text-button" data-add-rule="condicao_pagamento">+ Adicionar condição</button>
             </div>
             <div>
               <h3>Por tipo de entrada</h3>
-              <table><thead><tr><th>Entrada</th><th>% comissão</th></tr></thead><tbody id="commissionRulesEntradaBody"></tbody></table>
+              <table><thead><tr><th>Entrada</th><th>% comissão</th><th></th></tr></thead><tbody id="commissionRulesEntradaBody"></tbody></table>
+              <button type="button" class="text-button" data-add-rule="tipo_entrada">+ Adicionar tipo de entrada</button>
             </div>
           </div>
           <button id="saveCommissionRulesButton" class="secondary-button" type="button">Salvar regras</button>
@@ -274,10 +284,10 @@
         <form class="panel form-panel admin-or-central" id="prazosReservaPanel" hidden>
           <span class="eyebrow">RESERVAS</span>
           <h2>Tempos da reserva</h2>
-          <p class="muted-text">Valem para os próximos pedidos dos corretores. Somente o administrador altera.</p>
-          <label><span>Tempo para a Central responder o pedido (minutos)</span><input id="prazoPedidoInput" type="number" inputmode="numeric" min="1" max="1440" required /></label>
-          <label><span>Tempo que a reserva aprovada fica ativa (minutos)</span><input id="prazoValidadeInput" type="number" inputmode="numeric" min="1" max="10080" required /></label>
-          <label><span>Bloqueio do corretor que não concluir a reserva no prazo (horas · 0 = sem bloqueio)</span><input id="prazoBloqueioInput" type="number" inputmode="numeric" min="0" max="720" required /></label>
+          <p class="muted-text">Valem para os próximos pedidos dos corretores. Somente o administrador altera. Formato horas:minutos — 48:00 = 2 dias · 24:00 = 1 dia · 02:30 = 2 h e 30 min · 00:40 = 40 min.</p>
+          <label><span>Tempo para a Central responder o pedido (horas:minutos)</span><input id="prazoPedidoInput" type="text" inputmode="numeric" placeholder="00:20" autocomplete="off" required /></label>
+          <label><span>Tempo que a reserva aprovada fica ativa (horas:minutos)</span><input id="prazoValidadeInput" type="text" inputmode="numeric" placeholder="02:00" autocomplete="off" required /></label>
+          <label><span>Bloqueio do corretor que não concluir a reserva no prazo (horas:minutos · 00:00 = sem bloqueio)</span><input id="prazoBloqueioInput" type="text" inputmode="numeric" placeholder="24:00" autocomplete="off" required /></label>
           <small id="prazosReservaResumo" class="muted-text"></small>
           <button id="prazosReservaSalvar" class="primary-button admin-only" type="submit">Salvar tempos</button>
           <div id="prazosReservaMessage" class="form-message" hidden></div>

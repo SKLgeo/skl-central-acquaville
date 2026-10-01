@@ -52,7 +52,7 @@
 
     var map = L.map(container, {
       crs: L.CRS.Simple,
-      minZoom: -2,
+      minZoom: -10,
       maxZoom: 5,
       zoomSnap: 0.1,
       zoomDelta: 0.6,
@@ -62,14 +62,34 @@
     L.control.zoom({ position: "bottomright" }).addTo(map);
     L.imageOverlay(opts.imagemUrl, bounds).addTo(map);
     map.setMaxBounds(bounds);
+    // zoom mínimo = o que faz a imagem caber inteira na tela (imagens grandes, como o mapa v3 da
+    // Acquaville com 10.631 px, não cabiam no celular com o mínimo fixo antigo de -2)
+    function ajustarZoomMinimo() {
+      map.setMinZoom(-10);
+      map.setMinZoom(Math.floor((map.getBoundsZoom(bounds, false, L.point(20, 20)) - 0.3) * 10) / 10);
+    }
+    ajustarZoomMinimo();
     map.fitBounds(bounds, { padding: [10, 10] });
     // o tamanho do contêiner pode mudar logo depois de abrir (painel do editor, tela de celular):
     // recalcula no próximo quadro para a imagem ocupar a área certa
     setTimeout(function () {
       if (!map._container || !map._container.isConnected) return;
       map.invalidateSize();
+      ajustarZoomMinimo();
       map.fitBounds(bounds, { padding: [10, 10] });
     }, 60);
+    // iPhone: a barra do Safari some/aparece e muda a altura da tela — recalcula o tamanho;
+    // enquanto a pessoa ainda não mexeu no mapa, mantém o mapa inteiro centralizado.
+    var mexeu = false;
+    map.on("zoomstart dragstart", function (e) { if (e && e.hard !== false) mexeu = true; });
+    function aoRedimensionar() {
+      if (!map._container || !map._container.isConnected) { window.removeEventListener("resize", aoRedimensionar); return; }
+      map.invalidateSize();
+      ajustarZoomMinimo();
+      if (!mexeu) map.fitBounds(bounds, { padding: [10, 10], animate: false });
+    }
+    window.addEventListener("resize", aoRedimensionar);
+    setTimeout(function () { mexeu = false; }, 400);
 
     var marcadoresPorLote = new Map();
     var marcadoresPorPonto = new Map(); // ponto (referencia do objeto) -> L.Marker, só em modo editavel

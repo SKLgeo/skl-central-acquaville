@@ -41,7 +41,7 @@
     // uma conta com acesso múltiplo veria os empreendimentos de outro cliente
     // dentro do app com a marca da Acquaville.
     const SLUGS_PERMITIDOS = [ "acquaville" ];
-    const APP_VERSION = "0.4.2";
+    const APP_VERSION = "0.4.3";
     if ($("appVersionText")) $("appVersionText").textContent = `v${APP_VERSION}`;
     const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
         auth: {
@@ -607,15 +607,45 @@
     }
     // Tempos da reserva (pedido / reserva ativa / bloqueio) — só o administrador altera,
     // pela RPC configurar_prazos_reserva; central_vendas só consulta.
+    // Tempos da reserva no formato HH:MM ("48:00" = 2 dias, "00:40" = 40 minutos, "02:30" = 2 h 30 min).
+    // No banco tudo fica em minutos (configurar_prazos_reserva_min).
+    const PRAZO_MAX_MIN = 30 * 24 * 60;
+    function minutosParaHHMM(min) {
+        const m = Math.max(0, Math.round(Number(min) || 0));
+        return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+    }
+    function hhmmParaMinutos(texto) {
+        const t = String(texto || "").trim();
+        let m = t.match(/^(\d{1,3}):([0-5]\d)$/);
+        if (m) return Number(m[1]) * 60 + Number(m[2]);
+        m = t.match(/^(\d{1,3})$/);
+        if (m) return Number(m[1]) * 60;
+        return NaN;
+    }
     function textoPrazo(min) {
         const m = Number(min) || 0;
         if (m < 60) return `${m} min`;
-        const h = Math.floor(m / 60), r = m % 60;
-        return r ? `${h} h ${r} min` : `${h} h`;
+        const dias = Math.floor(m / 1440), h = Math.floor(m % 1440 / 60), r = m % 60;
+        const partes = [];
+        if (dias) partes.push(dias === 1 ? "1 dia" : `${dias} dias`);
+        if (h) partes.push(`${h} h`);
+        if (r) partes.push(`${r} min`);
+        return partes.join(" e ");
+    }
+    function lerPrazos() {
+        return {
+            p: hhmmParaMinutos($("prazoPedidoInput").value),
+            v: hhmmParaMinutos($("prazoValidadeInput").value),
+            b: hhmmParaMinutos($("prazoBloqueioInput").value)
+        };
     }
     function pintarResumoPrazos() {
-        const p = Number($("prazoPedidoInput").value), v = Number($("prazoValidadeInput").value), b = Number($("prazoBloqueioInput").value);
-        $("prazosReservaResumo").textContent = `Hoje: a Central tem ${textoPrazo(p)} para responder; a reserva aprovada vale ${textoPrazo(v)}; ${b > 0 ? `quem não concluir fica ${b} h sem poder reservar o mesmo lote` : "sem bloqueio para quem não concluir"}.`;
+        const {p: p, v: v, b: b} = lerPrazos();
+        if (![ p, v, b ].every(Number.isFinite)) {
+            $("prazosReservaResumo").textContent = "Use o formato horas:minutos — ex.: 48:00 (2 dias), 02:30 (2 h e 30 min), 00:40 (40 min).";
+            return;
+        }
+        $("prazosReservaResumo").textContent = `Hoje: a Central tem ${textoPrazo(p)} para responder; a reserva aprovada vale ${textoPrazo(v)}; ${b > 0 ? `quem não concluir fica ${textoPrazo(b)} sem poder reservar o mesmo lote` : "sem bloqueio para quem não concluir"}.`;
     }
     async function carregarPrazosReserva() {
         const painel = $("prazosReservaPanel");
@@ -623,29 +653,44 @@
         const ehAdmin = currentUser.papel === "administrador";
         [ "prazoPedidoInput", "prazoValidadeInput", "prazoBloqueioInput" ].forEach(id => $(id).disabled = !ehAdmin);
         $("prazosReservaMessage").hidden = true;
-        const {data: data, error: error} = await sb.from("empreendimentos").select("reserva_pedido_min, reserva_validade_min, reserva_bloqueio_horas").eq("id", empreendimentoId).maybeSingle();
+        const {data: data, error: error} = await sb.from("empreendimentos").select("reserva_pedido_min, reserva_validade_min, reserva_bloqueio_horas, reserva_bloqueio_min").eq("id", empreendimentoId).maybeSingle();
         if (error || !data) {
             painel.hidden = true;
             return;
         }
-        $("prazoPedidoInput").value = data.reserva_pedido_min;
-        $("prazoValidadeInput").value = data.reserva_validade_min;
-        $("prazoBloqueioInput").value = data.reserva_bloqueio_horas;
+        $("prazoPedidoInput").value = minutosParaHHMM(data.reserva_pedido_min);
+        $("prazoValidadeInput").value = minutosParaHHMM(data.reserva_validade_min);
+        $("prazoBloqueioInput").value = minutosParaHHMM(data.reserva_bloqueio_min ?? (data.reserva_bloqueio_horas || 0) * 60);
         pintarResumoPrazos();
         if (!painel.dataset.ligado) {
             painel.dataset.ligado = "1";
-            [ "prazoPedidoInput", "prazoValidadeInput", "prazoBloqueioInput" ].forEach(id => $(id).addEventListener("input", pintarResumoPrazos));
+            [ "prazoPedidoInput", "prazoValidadeInput", "prazoBloqueioInput" ].forEach(id => {
+                $(id).addEventListener("input", () => {
+                    // máscara: só dígitos e os dois-pontos entram sozinhos antes dos 2 últimos (4800 → 48:00)
+                    const dig = $(id).value.replace(/D/g, "").slice(0, 5);
+                    $(id).value = dig.length > 2 ? `${dig.slice(0, -2)}:${dig.slice(-2)}` : dig;
+                    pintarResumoPrazos();
+                });
+                $(id).addEventListener("blur", () => {
+                    const min = hhmmParaMinutos($(id).value);
+                    if (Number.isFinite(min)) $(id).value = minutosParaHHMM(min);
+                });
+            });
             painel.addEventListener("submit", async event => {
                 event.preventDefault();
                 if (currentUser.papel !== "administrador") return;
+                const {p: p, v: v, b: b} = lerPrazos();
+                if (![ p, v, b ].every(Number.isFinite)) return showMessage($("prazosReservaMessage"), "Use o formato horas:minutos, ex.: 48:00, 02:30 ou 00:40.");
+                if (p < 1 || v < 1) return showMessage($("prazosReservaMessage"), "O tempo de resposta e o da reserva precisam ter pelo menos 00:01.");
+                if (p > PRAZO_MAX_MIN || v > PRAZO_MAX_MIN || b > PRAZO_MAX_MIN) return showMessage($("prazosReservaMessage"), "Cada tempo pode ir até 720:00 (30 dias).");
                 const botao = $("prazosReservaSalvar");
                 botao.disabled = true;
                 try {
-                    const {error: rpcError} = await sb.rpc("configurar_prazos_reserva", {
+                    const {error: rpcError} = await sb.rpc("configurar_prazos_reserva_min", {
                         p_empreendimento_id: empreendimentoId,
-                        p_pedido_min: Math.round(Number($("prazoPedidoInput").value)),
-                        p_validade_min: Math.round(Number($("prazoValidadeInput").value)),
-                        p_bloqueio_horas: Math.round(Number($("prazoBloqueioInput").value))
+                        p_pedido_min: p,
+                        p_validade_min: v,
+                        p_bloqueio_min: b
                     });
                     if (rpcError) throw rpcError;
                     showMessage($("prazosReservaMessage"), "Tempos salvos. Valem para os próximos pedidos.", true);
@@ -2250,24 +2295,65 @@
         commissionRules = data || [];
         renderCommissionRules();
     }
+    // Regras de comissão: o texto de cada regra ("Até 12x sem juros", "10% de entrada"...) é livre —
+    // a Central escreve a condição como quiser, adiciona novas linhas e remove as que não usa.
+    // Linhas novas só vão para o banco ao tocar em "Salvar regras".
+    let regrasRemovidas = [];
+    function linhaRegraHtml(r) {
+        const id = r.id ? `data-rule-id="${h(r.id)}"` : `data-rule-new="${h(r.tipo)}"`;
+        return `<tr ${id}><td><input type="text" class="regra-rotulo" maxlength="80" value="${h(r.rotulo || "")}" placeholder="${r.tipo === "tipo_entrada" ? "Ex.: 10% de entrada" : "Ex.: Até 12x sem juros"}" /></td><td><input type="number" class="regra-percentual" step="0.01" min="0" value="${r.percentual != null ? h(r.percentual) : ""}" placeholder="—" /></td><td><button type="button" class="text-button regra-remover" title="Remover esta regra" aria-label="Remover esta regra">×</button></td></tr>`;
+    }
+    function ligarBotoesRegras(corpo) {
+        corpo.querySelectorAll(".regra-remover").forEach(btn => btn.onclick = () => {
+            const tr = btn.closest("tr");
+            if (tr.dataset.ruleId) regrasRemovidas.push(tr.dataset.ruleId);
+            tr.remove();
+        });
+    }
     function renderCommissionRules() {
+        regrasRemovidas = [];
         const condicoes = commissionRules.filter(r => r.tipo === "condicao_pagamento");
         const entradas = commissionRules.filter(r => r.tipo === "tipo_entrada");
-        $("commissionRulesCondicaoBody").innerHTML = condicoes.map(r => `<tr><td>${h(r.rotulo)}</td><td><input type="number" step="0.01" min="0" data-rule-id="${h(r.id)}" value="${r.percentual != null ? h(r.percentual) : ""}" placeholder="—" /></td></tr>`).join("");
-        $("commissionRulesEntradaBody").innerHTML = entradas.map(r => `<tr><td>${h(r.rotulo)}</td><td><input type="number" step="0.01" min="0" data-rule-id="${h(r.id)}" value="${r.percentual != null ? h(r.percentual) : ""}" placeholder="—" /></td></tr>`).join("");
+        $("commissionRulesCondicaoBody").innerHTML = condicoes.map(linhaRegraHtml).join("");
+        $("commissionRulesEntradaBody").innerHTML = entradas.map(linhaRegraHtml).join("");
+        ligarBotoesRegras($("commissionRulesCondicaoBody"));
+        ligarBotoesRegras($("commissionRulesEntradaBody"));
+        document.querySelectorAll("[data-add-rule]").forEach(btn => btn.onclick = () => {
+            const tipo = btn.dataset.addRule;
+            const corpo = $(tipo === "tipo_entrada" ? "commissionRulesEntradaBody" : "commissionRulesCondicaoBody");
+            corpo.insertAdjacentHTML("beforeend", linhaRegraHtml({ tipo: tipo, rotulo: "", percentual: null }));
+            ligarBotoesRegras(corpo);
+            corpo.lastElementChild.querySelector(".regra-rotulo").focus();
+        });
     }
     async function saveCommissionRules() {
-        const inputs = [...document.querySelectorAll("#commissionRulesCondicaoBody input[data-rule-id], #commissionRulesEntradaBody input[data-rule-id]")];
-        const updates = inputs.map(input => ({
-            id: input.dataset.ruleId,
-            percentual: input.value.trim() === "" ? null : Number(input.value)
-        }));
+        const linhas = [...document.querySelectorAll("#commissionRulesCondicaoBody tr, #commissionRulesEntradaBody tr")];
+        const dados = linhas.map(tr => {
+            const bruto = tr.querySelector(".regra-percentual").value.trim().replace(",", ".");
+            return {
+                tr: tr,
+                id: tr.dataset.ruleId || null,
+                tipo: tr.dataset.ruleNew || null,
+                rotulo: tr.querySelector(".regra-rotulo").value.trim(),
+                percentual: bruto === "" ? null : Number(bruto)
+            };
+        });
+        if (dados.some(d => !d.rotulo)) return showMessage($("commissionRulesMessage"), "Escreva o texto de todas as regras (ou remova a linha vazia).");
+        if (dados.some(d => d.percentual != null && (!Number.isFinite(d.percentual) || d.percentual < 0 || d.percentual > 100))) return showMessage($("commissionRulesMessage"), "O percentual deve ser um número entre 0 e 100.");
         try {
-            for (const upd of updates) {
-                const {error: error} = await sb.from("comissao_regras").update({
-                    percentual: upd.percentual,
-                    updated_at: new Date().toISOString()
-                }).eq("id", upd.id);
+            const empId = await empreendimentoIdAtual();
+            for (const id of regrasRemovidas) {
+                const {error: error} = await sb.from("comissao_regras").delete().eq("id", id);
+                if (error) throw error;
+            }
+            const ordemPorTipo = {};
+            for (const d of dados) {
+                const tipo = d.id ? commissionRules.find(r => r.id === d.id)?.tipo : d.tipo;
+                ordemPorTipo[tipo] = (ordemPorTipo[tipo] || 0) + 1;
+                const campos = { rotulo: d.rotulo, percentual: d.percentual, ordem: ordemPorTipo[tipo], updated_at: new Date().toISOString() };
+                const {error: error} = d.id
+                    ? await sb.from("comissao_regras").update(campos).eq("id", d.id)
+                    : await sb.from("comissao_regras").insert({ ...campos, empreendimento_id: empId, tipo: tipo, chave: `livre_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}` });
                 if (error) throw error;
             }
             await loadCommissionRules();
@@ -2353,15 +2439,16 @@
         }
     }
     let planCorretoresAtivos = 0;
+    let planResumo = null;
     async function loadPlanInfo() {
         const empId = await empreendimentoIdAtual();
-        const {data: data} = await sb.from("empreendimentos").select("plano_nome, limite_corretores, valor_mensal").eq("id", empId).maybeSingle();
-        if (data) planInfo = data;
-        const {count: count} = await sb.from("empreendimento_usuarios").select("usuario_id", {
-            count: "exact",
-            head: true
-        }).eq("empreendimento_id", empId).eq("papel", "corretor").eq("ativo", true);
-        planCorretoresAtivos = count || 0;
+        // resumo_plano: contagens no banco (só ativos e dentro do prazo; conta mestre da SKL fora), pacote e vencimento
+        const {data: resumo, error: resumoErro} = await sb.rpc("resumo_plano", { p_empreendimento_id: empId });
+        if (!resumoErro && resumo) {
+            planInfo = { plano_nome: resumo.plano_nome, limite_corretores: resumo.limite, valor_mensal: resumo.valor_mensal, vencimento: resumo.vencimento };
+            planResumo = resumo;
+            planCorretoresAtivos = resumo.corretores_ativos || 0;
+        }
         const {data: reqRows} = await sb.from("solicitacoes_plano").select("*").eq("empreendimento_id", empId).order("created_at", {
             ascending: false
         });
@@ -2376,6 +2463,15 @@
     function renderPlan() {
         $("planNameText").textContent = planInfo.plano_nome || "Sem pacote definido";
         $("planCorretoresUsados").textContent = planCorretoresAtivos;
+        const total = planResumo ? planResumo.total_ativos || 0 : 0;
+        const limite = planInfo.limite_corretores;
+        $("planUsuariosUsados").textContent = limite == null ? `${total} (sem limite)` : `${total} / ${limite}`;
+        const pct = limite ? Math.min(100, Math.round(total / limite * 100)) : 0;
+        $("planUsoBarra").style.width = pct + "%";
+        $("planUsoBarra").className = pct >= 100 ? "cheio" : pct >= 85 ? "quase" : "";
+        $("planCentraisAtivas").textContent = planResumo ? planResumo.centrais_ativas || 0 : "—";
+        $("planInativos").textContent = planResumo ? planResumo.inativos || 0 : "—";
+        $("planVencimento").textContent = planInfo.vencimento ? new Date(planInfo.vencimento + "T12:00:00").toLocaleDateString("pt-BR") : "—";
         $("planCorretoresLimite").textContent = planInfo.limite_corretores == null ? "Sem limite" : planInfo.limite_corretores;
         $("planValorMensal").textContent = planInfo.valor_mensal == null ? "A combinar" : `R$ ${Number(planInfo.valor_mensal).toLocaleString("pt-BR", {
             minimumFractionDigits: 2
@@ -2577,7 +2673,9 @@ async function createDirectUser() {
             }
             await loadUsers();
             const reaproveitado = data.reused_existing_account ? " (e-mail já tinha conta em outro empreendimento — vinculamos direto, mesma senha de sempre.)" : "";
-            showMessage($("directUserMessage"), (data.expira_em ? `Acesso criado — expira em ${formatDate(data.expira_em)}.` : "Acesso criado sem prazo de validade.") + reaproveitado + avisoTelefone, true);
+            if (data.inativo_por_limite) showMessage($("directUserMessage"), "Cadastro feito, mas o pacote está cheio: o acesso foi criado INATIVO. Desative outro usuário (ou peça mudança de pacote) e depois ative este na lista." + avisoTelefone);
+            else showMessage($("directUserMessage"), (data.expira_em ? `Acesso criado — expira em ${formatDate(data.expira_em)}.` : "Acesso criado sem prazo de validade.") + reaproveitado + avisoTelefone, true);
+            loadPlanInfo();
             const texto = await mensagemAcessoWhatsApp({ nome: nome, papel: papel, email: email, contaReaproveitada: !!data.reused_existing_account });
             botaoWhatsApp($("directWhatsappLink"), linkWhatsApp(telefone, texto));
             $("directNameInput").value = "";
@@ -2725,9 +2823,11 @@ async function createDirectUser() {
                 ativo: nextActive
             });
             await loadUsers();
+            loadPlanInfo();
             toast(nextActive ? "Acesso reativado." : "Acesso desativado.");
         } catch (error) {
-            toast(traduzErro(error.message));
+            const msg = traduzErro(error.message);
+            if (/Limite do pacote/.test(msg)) alert(msg); else toast(msg);
         }
     }
     let pendingResetUserId = null;
