@@ -53,7 +53,16 @@ dialog.sa-dlg{border:0;border-radius:16px;padding:0;max-width:min(680px,96vw);wi
 dialog.sa-dlg::backdrop{background:rgba(7,31,59,.6)}
 .sa-cond{padding:20px;max-height:90vh;overflow:auto;background:#fff;border-radius:16px}
 .sa-cond h2{margin:0 0 10px;color:var(--navy,#0c3b57)}
-.sa-cond .sa-grid label{margin-bottom:2px}`;
+.sa-cond .sa-grid label{margin-bottom:2px}
+.sa-faixas{grid-column:1/-1;border:1px solid #dce7ec;border-radius:10px;padding:10px 12px;background:#f8fbfc}
+.sa-faixas b{font-size:13px;color:#24414c}
+.sa-ftab{width:100%;min-width:0!important;border-collapse:collapse;margin-top:6px}
+.sa-ftab th{font-size:11.5px;color:#5b6f78;text-align:left;padding:2px 4px;font-weight:700}
+.sa-ftab td{padding:3px 4px;vertical-align:middle}
+.sa-ftab input,.sa-ftab select{width:100%;box-sizing:border-box;padding:7px 8px;border:1px solid #cdd9df;border-radius:7px;font-size:13.5px;font-family:inherit;margin:0}
+.sa-ftab .fx-de{font-size:12.5px;color:#5b6f78;white-space:nowrap}
+.sa-ftab button{border:0;background:#fdecea;color:#a3352a;border-radius:7px;padding:6px 9px;cursor:pointer;font-weight:700}
+@media(max-width:700px){.sa-ftab thead{display:none}.sa-ftab tr{display:grid;grid-template-columns:1fr 1fr;gap:4px;border-bottom:1px solid #dce7ec;padding:6px 0}.sa-ftab td{padding:0}}`;
 
     // ------------------------------------------------------------------ leitura de planilha
     const norm = (s) => String(s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
@@ -189,7 +198,13 @@ dialog.sa-dlg::backdrop{background:rgba(7,31,59,.6)}
         if (Array.isArray(c.faixas_prazo) && c.faixas_prazo.length) {
             const ord = c.faixas_prazo.slice().sort((a, b) => a.prazo_max_meses - b.prazo_max_meses);
             let de = 1;
-            taxa = ord.map((f) => { const t = `${de > 1 ? `${de}–` : "até "}${f.prazo_max_meses}x ${f.taxa_mensal_pct > 0 ? fmtNum(f.taxa_mensal_pct) + "% a.m." : "sem juros"}`; de = f.prazo_max_meses + 1; return t; }).join(", ");
+            taxa = ord.map((f) => {
+                const idx = f.indexador && f.indexador !== "nenhum" ? IDX[f.indexador] : "";
+                const auto = f.taxa_mensal_pct > 0 ? fmtNum(f.taxa_mensal_pct) + "% a.m." + (idx ? " + " + idx : "") : (idx ? "só " + idx : "sem juros");
+                const desc = f.rotulo ? esc(f.rotulo) + (f.taxa_mensal_pct > 0 ? " (" + fmtNum(f.taxa_mensal_pct) + "% a.m.)" : "") : auto;
+                const t = `${de > 1 ? `${de}–` : "até "}${f.prazo_max_meses}x ${desc}${f.cet_aa != null ? " · CET " + fmtNum(f.cet_aa) + "% a.a." : ""}`;
+                de = f.prazo_max_meses + 1; return t;
+            }).join(", ");
         } else {
             taxa = c.taxa_aa > 0 ? `${fmtNum(c.taxa_aa)}% a.a.${c.tipo_taxa === "efetiva" ? " (efetiva)" : ""}${c.indexador !== "nenhum" ? " + " + IDX[c.indexador] : ""}` : `sem juros${c.indexador !== "nenhum" ? " · " + IDX[c.indexador] : ""}`;
         }
@@ -273,7 +288,15 @@ Content-Type: application/json
         let d = $("#saCondDialog");
         if (!d) { d = document.createElement("dialog"); d.id = "saCondDialog"; d.className = "sa-dlg"; document.body.appendChild(d); }
         const c = cond || { nome: "", tipo: "financiamento_bancario", banco: "", sistema: "price", taxa_aa: 11.49, tipo_taxa: "nominal", indexador: "TR", entrada_min_pct: 20, financiavel_max_pct: 80, prazo_min_meses: 60, prazo_max_meses: 420, opcoes_prazo: [120, 180, 240, 300, 360, 420], seguro_mip_pct_mes: 0.03, seguro_dfi_pct_mes: 0.01, tarifa_mensal: 25, vigencia_ate: "", fonte: "", observacao: "", ativo: true, permite_balao: false, balao_max_meses: 48, faixas_prazo: null, entrada_fixa: false, entrada_parcelas_max: 1, cet_fixo_aa: null, indexador_desde_parcela: null };
-        const faixasTexto = (Array.isArray(c.faixas_prazo) ? c.faixas_prazo : []).map((f) => `${f.prazo_max_meses}:${f.taxa_mensal_pct}`).join("\n");
+        const IDXOPT = [["", "Igual à condição"], ["nenhum", "Nenhuma"], ["IPCA", "IPCA"], ["INCC", "INCC"], ["IGPM", "IGP-M"], ["TR", "TR"]];
+        const linhaFaixa = (f) => `<tr><td class="fx-de"></td>` +
+            `<td><input class="fx-max" inputmode="numeric" value="${f && f.prazo_max_meses != null ? esc(f.prazo_max_meses) : ""}" placeholder="ex.: 60"></td>` +
+            `<td><input class="fx-taxa" inputmode="decimal" value="${f && f.taxa_mensal_pct != null ? esc(fmtNum(f.taxa_mensal_pct)) : ""}" placeholder="0"></td>` +
+            `<td><select class="fx-idx">${IDXOPT.map(([k, t]) => `<option value="${k}"${(f && f.indexador ? f.indexador : "") === k ? " selected" : ""}>${t}</option>`).join("")}</select></td>` +
+            `<td><input class="fx-cet" inputmode="decimal" value="${f && f.cet_aa != null ? esc(fmtNum(f.cet_aa)) : ""}" placeholder="—"></td>` +
+            `<td><input class="fx-rot" maxlength="40" value="${f && f.rotulo ? esc(f.rotulo) : ""}" placeholder="ex.: Só IPCA"></td>` +
+            `<td><button type="button" data-x="rmFaixa" title="Remover faixa">×</button></td></tr>`;
+        const faixasLinhas = (Array.isArray(c.faixas_prazo) ? c.faixas_prazo.slice().sort((a, b) => a.prazo_max_meses - b.prazo_max_meses) : []).map(linhaFaixa).join("");
         const sel = (id, opts, v) => `<select id="${id}">${opts.map(([k, t]) => `<option value="${k}"${k === v ? " selected" : ""}>${t}</option>`).join("")}</select>`;
         d.innerHTML = `<div class="sa-cond"><button type="button" class="dialog-close" data-x="1" style="float:right">×</button><span class="eyebrow">SIMULADOR</span><h2>${cond ? "Editar condição" : "Nova condição"}</h2>
 <div class="sa-grid">
@@ -293,7 +316,9 @@ Content-Type: application/json
  <label>Prazo mínimo (meses)<input id="scPmin" inputmode="numeric" value="${esc(c.prazo_min_meses)}"></label>
  <label>Prazo máximo (meses)<input id="scPmax" inputmode="numeric" value="${esc(c.prazo_max_meses)}"></label>
  <label style="grid-column:1/-1">Opções de prazo mostradas ao corretor (meses, separadas por vírgula)<input id="scOpcoes" value="${esc((c.opcoes_prazo || []).join(", "))}"></label>
- <label style="grid-column:1/-1">Faixas de taxa por prazo (opcional — deixe em branco para usar só a taxa acima). Uma por linha: <code>até quantos meses : juros ao mês (%)</code>. Ex.: até 60x sem juros e de 61 a 192x a 0,8% a.m. = <code>60:0</code> na 1ª linha e <code>192:0.8</code> na 2ª.<textarea id="scFaixas" rows="2" placeholder="60:0&#10;192:0.8">${esc(faixasTexto)}</textarea></label>
+ <div class="sa-faixas"><b>Faixas por prazo (opcional)</b><p class="sa-hint">Cada faixa vale até o número de parcelas indicado; sem faixas, valem a taxa e o indexador acima. Correção “Igual à condição” usa o indexador acima. CET em branco usa o CET da condição só em faixa com juros. O texto aparece para o corretor e na proposta (ex.: “Sem juros”, “Só IPCA”, “Price + IPCA”).</p>
+ <table class="sa-ftab"><thead><tr><th>Parcelas</th><th>Até (meses)</th><th>Juros ao mês (%)</th><th>Correção</th><th>CET a.a. (%)</th><th>Texto mostrado</th><th></th></tr></thead><tbody id="scFaixasBody">${faixasLinhas}</tbody></table>
+ <button type="button" class="secondary-button" data-x="addFaixa" style="margin-top:6px">+ Adicionar faixa</button></div>
  <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="scBalao" ${c.permite_balao ? "checked" : ""} style="width:auto;margin:0"> Permite balão (o corretor escolhe quantas parcelas e o intervalo ao simular)</label>
  <label>Balão: até quantos meses no total<input id="scBalaoMax" inputmode="numeric" value="${esc(c.balao_max_meses || 48)}"></label>
  <label>Seguro MIP (% ao mês sobre o saldo)<input id="scMip" inputmode="decimal" value="${esc(fmtNum(c.seguro_mip_pct_mes, 3))}"></label>
@@ -309,18 +334,41 @@ Content-Type: application/json
         d.onclick = async (ev) => {
             const a = ev.target.closest && ev.target.closest("[data-x]"); if (!a) return;
             if (a.dataset.x === "1" || a.dataset.x === "fechar") return d.close();
+            if (a.dataset.x === "addFaixa") { $("#scFaixasBody", d).insertAdjacentHTML("beforeend", linhaFaixa(null)); return pintarDe(); }
+            if (a.dataset.x === "rmFaixa") { a.closest("tr").remove(); return pintarDe(); }
             if (a.dataset.x === "salvar") {
                 const g = (id) => $(id, d).value;
-                const faixas = g("#scFaixas").split(/\r?\n/).map((l) => l.trim()).filter(Boolean).map((l) => {
-                    const m = l.match(/^(\d+)\s*:\s*([\d.,]+)$/); if (!m) return null;
-                    return { prazo_max_meses: Number(m[1]), taxa_mensal_pct: Number(m[2].replace(",", ".")) };
-                }).filter(Boolean);
+                const faixas = lerFaixas();
+                if (faixas === null) { const m = $("#scMsg", d); m.textContent = "Confira as faixas: cada uma precisa de “Até (meses)” e de juros ao mês (0 = sem juros)."; m.hidden = false; return; }
                 const dados = { nome: g("#scNome"), tipo: g("#scTipo"), banco: g("#scBanco"), sistema: g("#scSistema"), taxa_aa: num(g("#scTaxa")), tipo_taxa: g("#scTipoTaxa"), indexador: g("#scIdx"), entrada_min_pct: num(g("#scEntrada")), financiavel_max_pct: num(g("#scFin")), prazo_min_meses: num(g("#scPmin")), prazo_max_meses: num(g("#scPmax")), opcoes_prazo: g("#scOpcoes").split(/[^\d]+/).filter(Boolean).map(Number), seguro_mip_pct_mes: num(g("#scMip")), seguro_dfi_pct_mes: num(g("#scDfi")), tarifa_mensal: num(g("#scTarifa")), vigencia_ate: g("#scVig") || null, fonte: g("#scFonte"), observacao: g("#scObs"), ativo: $("#scAtivo", d).checked, permite_balao: $("#scBalao", d).checked, balao_max_meses: num(g("#scBalaoMax")), faixas_prazo: faixas.length ? faixas : null, entrada_fixa: $("#scEntFixa", d).checked, entrada_parcelas_max: Math.min(12, Math.max(1, Math.round(num(g("#scEntParc")) || 1))), cet_fixo_aa: g("#scCet").trim() ? num(g("#scCet")) : null, indexador_desde_parcela: g("#scIdxDesde").trim() ? Math.max(1, Math.round(num(g("#scIdxDesde")))) : null };
                 Object.keys(dados).forEach((k) => { if (typeof dados[k] === "number" && Number.isNaN(dados[k])) dados[k] = null; });
                 try { await rpc("simulador_salvar_condicao", { p_empreendimento_id: A.empId, p_id: A.editandoId, p_dados: dados }); d.close(); toast("Condição salva."); await recarregarTudo(); }
                 catch (e) { const m = $("#scMsg", d); m.textContent = e.message; m.hidden = false; }
             }
         };
+        function lerFaixas() {
+            const out = [];
+            for (const tr of d.querySelectorAll("#scFaixasBody tr")) {
+                const v = (cl) => tr.querySelector(cl).value.trim();
+                if (!v(".fx-max") && !v(".fx-taxa") && !v(".fx-cet") && !v(".fx-rot")) continue;
+                const max = Math.round(num(v(".fx-max"))), taxa = v(".fx-taxa") ? num(v(".fx-taxa")) : 0;
+                if (!(max >= 1) || !(taxa >= 0)) return null;
+                const f = { prazo_max_meses: max, taxa_mensal_pct: taxa };
+                if (v(".fx-idx")) f.indexador = v(".fx-idx");
+                if (v(".fx-cet")) { const cet = num(v(".fx-cet")); if (!(cet >= 0)) return null; f.cet_aa = cet; }
+                if (v(".fx-rot")) f.rotulo = v(".fx-rot");
+                out.push(f);
+            }
+            return out.sort((x, y) => x.prazo_max_meses - y.prazo_max_meses);
+        }
+        function pintarDe() {
+            const linhas = Array.from(d.querySelectorAll("#scFaixasBody tr")).map((tr) => ({ tr, max: Math.round(num(tr.querySelector(".fx-max").value)) }));
+            let de = 1;
+            for (const l of linhas.filter((x) => x.max >= 1).sort((a, b) => a.max - b.max)) { l.tr.querySelector(".fx-de").textContent = de < l.max ? `${de} a ${l.max}x` : `${l.max}x`; de = l.max + 1; }
+            linhas.filter((x) => !(x.max >= 1)).forEach((x) => { x.tr.querySelector(".fx-de").textContent = "—"; });
+        }
+        d.oninput = (ev) => { if (ev.target.classList && ev.target.classList.contains("fx-max")) pintarDe(); };
+        pintarDe();
         d.showModal();
     }
 

@@ -47,15 +47,25 @@
         if (!(aa > 0)) return 0;
         return cond.tipo_taxa === "efetiva" ? Math.pow(1 + aa, 1 / 12) - 1 : aa / 12;
     }
-    // condições com faixas_prazo (ex.: até 60x sem juros, de 61 a 192x Price 0,8% a.m.) usam
-    // a taxa da primeira faixa cujo prazo_max_meses cobre o prazo escolhido; sem faixas, usa taxa_aa normal.
+    // condições com faixas_prazo (ex.: até 12x sem juros, 13 a 60x só IPCA, 61 a 192x Price 0,8% a.m. + IPCA) usam
+    // a primeira faixa cujo prazo_max_meses cobre o prazo escolhido; sem faixas, usa taxa_aa normal.
+    // Cada faixa pode trazer indexador, cet_aa e rotulo próprios (configurados pela empresa no painel).
+    function faixasOrdenadas(cond) {
+        return Array.isArray(cond && cond.faixas_prazo) && cond.faixas_prazo.length ? cond.faixas_prazo.slice().sort((a, b) => a.prazo_max_meses - b.prazo_max_meses) : null;
+    }
+    function faixaDoPrazo(cond, prazo) {
+        const ord = faixasOrdenadas(cond);
+        return ord ? ord.find((f) => prazo <= f.prazo_max_meses) || ord[ord.length - 1] : null;
+    }
     function taxaMensalPorPrazo(cond, prazo) {
-        if (Array.isArray(cond.faixas_prazo) && cond.faixas_prazo.length) {
-            const ordenadas = cond.faixas_prazo.slice().sort((a, b) => a.prazo_max_meses - b.prazo_max_meses);
-            const faixa = ordenadas.find((f) => prazo <= f.prazo_max_meses) || ordenadas[ordenadas.length - 1];
-            return (Number(faixa.taxa_mensal_pct) || 0) / 100;
-        }
-        return taxaMensal(cond);
+        const faixa = faixaDoPrazo(cond, prazo);
+        return faixa ? (Number(faixa.taxa_mensal_pct) || 0) / 100 : taxaMensal(cond);
+    }
+    // CET informado: o da faixa (se a faixa define cet_aa); senão o da condição, mas nunca numa faixa sem juros
+    function cetInformado(cond, prazo) {
+        const faixa = faixaDoPrazo(cond, prazo);
+        const v = faixa && Object.prototype.hasOwnProperty.call(faixa, "cet_aa") ? faixa.cet_aa : (faixa && !(Number(faixa.taxa_mensal_pct) > 0) ? null : cond.cet_fixo_aa);
+        return v != null && v !== "" && Number.isFinite(Number(v)) ? Number(v) : null;
     }
     function entradaMinimaPct(cond) {
         return Math.max(Number(cond.entrada_min_pct) || 0, 100 - (Number(cond.financiavel_max_pct) || 100));
@@ -116,21 +126,25 @@
             else cetAa = 0;
         }
         const comprometimento = Number(cfg && cfg.renda_comprometimento_pct) || 30;
-        // CET informado pela empresa (cet_fixo_aa) tem prioridade sobre o calculado.
-        const cetFixo = cond.cet_fixo_aa != null && cond.cet_fixo_aa !== "" && Number.isFinite(Number(cond.cet_fixo_aa)) ? Number(cond.cet_fixo_aa) : null;
+        // CET informado pela empresa (na faixa ou na condição) tem prioridade sobre o calculado.
+        const cetFixo = cetInformado(cond, prazo);
+        const faixa = faixaDoPrazo(cond, prazo);
         // entrada dividida em até N vezes sem juros: só divide o pagamento da entrada, não muda o financiado.
         const entradaParcelas = Math.min(entradaParcelasMax(cond), Math.max(1, Math.round(Number(p.entradaParcelas) || 1)));
         return {
             ok: true, erros: [], valor, entradaValor, entradaPct, entradaMinPct: minPct, prazo, valorFinanciado: pv, taxaMensal: i,
             parcelaInicial: primeira, parcelaFinal: ultima, totalParcelas, totalJuros, totalSeguros, totalTarifas, baloes, totalBaloes,
             totalPago: entradaValor + totalBaloes + totalParcelas, cetAa: cetFixo != null ? cetFixo : (cetAa == null ? null : cetAa * 100), cetFixo: cetFixo != null,
-            indexador: indexadorAplicavel(cond, prazo), entradaParcelas, entradaParcelaValor: entradaValor / entradaParcelas,
+            indexador: indexadorAplicavel(cond, prazo), faixaRotulo: (faixa && faixa.rotulo) || null, entradaParcelas, entradaParcelaValor: entradaValor / entradaParcelas,
             rendaMinima: primeira / (comprometimento / 100), comprometimento, tabela
         };
     }
     function entradaParcelasMax(cond) { return Math.max(1, Math.min(12, Math.round(Number(cond && cond.entrada_parcelas_max) || 1))); }
-    // indexador (ex.: IPCA) só vale a partir de indexador_desde_parcela, quando a condição define isso
+    // indexador: o da faixa do prazo, se a faixa define; senão o da condição, que só vale a partir de
+    // indexador_desde_parcela quando a condição define isso
     function indexadorAplicavel(cond, prazo) {
+        const faixa = faixaDoPrazo(cond, prazo);
+        if (faixa && faixa.indexador) return faixa.indexador;
         if (!cond || !cond.indexador || cond.indexador === "nenhum") return "nenhum";
         const desde = Math.round(Number(cond.indexador_desde_parcela) || 0);
         return desde > 0 && prazo < desde ? "nenhum" : cond.indexador;
@@ -146,7 +160,7 @@
         const tipoTaxaExibida = temFaixas ? "nominal" : cond.tipo_taxa;
         return {
             versao: 1, rotulo: (extra && extra.rotulo) || null, condicao_id: cond.id || null, condicao_nome: cond.nome, tipo: cond.tipo, banco: cond.banco || null,
-            sistema: cond.sistema, taxa_aa: taxaAaExibida, tipo_taxa: tipoTaxaExibida, indexador: res.indexador || cond.indexador, cet_fixo: !!res.cetFixo,
+            sistema: cond.sistema, taxa_aa: taxaAaExibida, tipo_taxa: tipoTaxaExibida, indexador: res.indexador || cond.indexador, cet_fixo: !!res.cetFixo, faixa_rotulo: res.faixaRotulo || null,
             valor_imovel: arred(res.valor), entrada_valor: arred(res.entradaValor), entrada_pct: arred(res.entradaPct), prazo_meses: res.prazo,
             entrada_parcelas: res.entradaParcelas || 1, entrada_parcela_valor: arred(res.entradaParcelaValor || res.entradaValor),
             baloes: (res.baloes || []).map((b) => ({ mes: b.mes, valor: arred(b.valor) })), balao_total: arred(res.totalBaloes || 0),
@@ -167,11 +181,20 @@
         const n = Math.max(1, Number(s.entrada_parcelas) || 1);
         return `${brl(s.entrada_valor)} (${pctTxt(s.entrada_pct)})${n > 1 ? ` em ${n}x de ${brl(s.entrada_parcela_valor || s.entrada_valor / n)} sem juros` : ""}`;
     }
+    // "Sem juros" / "Só IPCA" / "Price + IPCA · 9,6% a.a." — usa o texto da faixa quando a empresa definiu
+    function jurosTxt(s) {
+        const idx = IDX[s.indexador];
+        if (Number(s.taxa_aa) > 0) {
+            const taxa = `${fmtNum(s.taxa_aa)}% a.a.`;
+            return s.faixa_rotulo ? `${s.faixa_rotulo} · ${taxa}` : `${s.sistema === "sac" ? "SAC" : "Price"} · ${taxa}${idx ? " + " + idx : ""}`;
+        }
+        return s.faixa_rotulo || (idx ? `sem juros · corrigido pelo ${idx}` : "sem juros");
+    }
     const temCet = (s) => s && s.cet_aa != null && (s.taxa_aa > 0 || s.cet_fixo);
     const cetTxt = (s) => `${fmtNum(s.cet_aa)}% a.a.${IDX[s.indexador] ? " + " + IDX[s.indexador] : ""}`;
     function resumoTexto(s) {
         if (!s) return "";
-        const taxa = s.taxa_aa > 0 ? ` · ${fmtNum(s.taxa_aa)}% a.a.${IDX[s.indexador] ? " + " + IDX[s.indexador] : ""}` : (IDX[s.indexador] ? ` · corrigido pelo ${IDX[s.indexador]}` : " · sem juros");
+        const taxa = ` · ${jurosTxt(s)}`;
         const parc = s.sistema === "sac" && s.parcela_final < s.parcela_inicial - 0.005 ? `${s.prazo_meses}x de ${brl(s.parcela_inicial)} (decrescente)` : `${s.prazo_meses}x de ${brl(s.parcela_inicial)}`;
         return `${s.condicao_nome}${taxa} · Entrada ${entradaTxt(s)}${balaoTexto(s)} · ${parc}`;
     }
@@ -180,7 +203,7 @@
         garantirEstilo();
         const linhas = [
             ["Condição", `${esc(s.condicao_nome)}${s.banco ? ` <small>(${esc(s.banco)})</small>` : ""}`],
-            ["Sistema / taxa", `${s.sistema === "sac" ? "SAC" : "Price"}${s.taxa_aa > 0 ? ` · ${fmtNum(s.taxa_aa)}% a.a.` : " · sem juros"}${IDX[s.indexador] ? ` · ${IDX[s.indexador]}` : ""}`],
+            ["Juros / correção", esc(jurosTxt(s))],
             ["Valor do imóvel", brl(s.valor_imovel)],
             ["Entrada", entradaTxt(s)]
         ];
@@ -208,7 +231,7 @@
         }
         l.push(`Valor financiado: ${brl(s.valor_financiado)}`);
         l.push(`Condição: ${s.condicao_nome}${s.banco ? " (" + s.banco + ")" : ""}`);
-        l.push(`Sistema: ${s.sistema === "sac" ? "SAC (parcelas decrescentes)" : "Price (parcelas fixas)"}${s.taxa_aa > 0 ? " · " + fmtNum(s.taxa_aa) + "% a.a." : " · sem juros"}${IDX[s.indexador] ? " + " + IDX[s.indexador] : ""}`);
+        l.push(`Juros / correção: ${jurosTxt(s)}`);
         l.push(`Prazo: ${s.prazo_meses} meses`);
         l.push(s.sistema === "sac" && s.parcela_final < s.parcela_inicial - 0.005 ? `Parcela: de ${brl(s.parcela_inicial)} até ${brl(s.parcela_final)}` : `Parcela: ${brl(s.parcela_inicial)}`);
         if (mostraTotais()) l.push(`Total pago (entrada + parcelas): ${brl(s.total_pago)}`);
@@ -477,18 +500,19 @@
         pintarEntrada(); pintar();
     }
     function tipoTxt(cond) {
-        if (Array.isArray(cond.faixas_prazo) && cond.faixas_prazo.length) {
-            const ordenadas = cond.faixas_prazo.slice().sort((a, b) => a.prazo_max_meses - b.prazo_max_meses);
+        const ord = faixasOrdenadas(cond);
+        if (ord) {
             let de = 1;
-            const partes = ordenadas.map((f) => {
-                const txt = `até ${f.prazo_max_meses}x ${f.taxa_mensal_pct > 0 ? `${fmtNum(f.taxa_mensal_pct)}% a.m.` : "sem juros"}`.replace("até", de > 1 ? `de ${de} a` : "até");
+            const partes = ord.map((f) => {
+                const faixa = de > 1 ? `${de} a ${f.prazo_max_meses}x` : `até ${f.prazo_max_meses}x`;
+                const idx = IDX[indexadorAplicavel(cond, f.prazo_max_meses)];
+                const taxa = Number(f.taxa_mensal_pct) || 0;
+                const desc = f.rotulo ? `${f.rotulo}${taxa > 0 ? ` (${fmtNum(taxa)}% a.m.)` : ""}` : (taxa > 0 ? `${cond.sistema === "sac" ? "SAC" : "Price"} ${fmtNum(taxa)}% a.m.${idx ? " + " + idx : ""}` : (idx ? `só ${idx}` : "sem juros"));
                 de = f.prazo_max_meses + 1;
-                return txt;
+                return `${faixa} ${desc}`;
             });
-            const desde = Math.round(Number(cond.indexador_desde_parcela) || 0);
-            const idx = IDX[cond.indexador] ? ` · + ${IDX[cond.indexador]}${desde > 1 ? ` a partir de ${desde}x` : ""}` : "";
             const entParc = entradaParcelasMax(cond) > 1 ? ` · entrada em até ${entradaParcelasMax(cond)}x` : "";
-            return `${cond.banco ? cond.banco + " · " : ""}${cond.sistema === "sac" ? "SAC" : "Price"} · ${partes.join(", ")}${idx}${entParc}${cond.permite_balao ? " · balão opcional" : ""}`;
+            return `${cond.banco ? cond.banco + " · " : ""}${partes.join(" · ")}${entParc}${cond.permite_balao ? " · balão opcional" : ""}`;
         }
         const taxa = cond.taxa_aa > 0 ? `${fmtNum(cond.taxa_aa)}% a.a.${cond.tipo_taxa === "efetiva" ? " (efetiva)" : ""}${IDX[cond.indexador] ? " + " + IDX[cond.indexador] : ""}` : (IDX[cond.indexador] ? `sem juros · corrigido pelo ${IDX[cond.indexador]}` : "sem juros");
         return `${cond.banco ? cond.banco + " · " : ""}${cond.sistema === "sac" ? "SAC" : "Price"} · ${taxa}${cond.permite_balao ? " · balão opcional" : ""}`;
@@ -566,7 +590,7 @@
             box.innerHTML = `<div class="skl-sim-res">
   <div class="sub">${decresc ? "Primeira parcela" : "Parcela mensal"}</div>
   <div class="big">${brl(res.parcelaInicial)}</div>
-  <div class="sub">${decresc ? `decrescendo até ${brl(res.parcelaFinal)} · ${res.prazo} parcelas` : `${res.prazo} parcelas fixas`}</div>
+  <div class="sub">${decresc ? `decrescendo até ${brl(res.parcelaFinal)} · ${res.prazo} parcelas` : `${res.prazo} parcelas fixas`} · ${esc(jurosTxt({ taxa_aa: arred(res.taxaMensal * 12 * 100), indexador: res.indexador, faixa_rotulo: res.faixaRotulo, sistema: cond.sistema }))}</div>
   <div class="skl-sim-grid">
     <div><span>Valor financiado</span><b>${brl(res.valorFinanciado)}</b></div>
     <div><span>Entrada${res.entradaParcelas > 1 ? ` (${res.entradaParcelas}x sem juros)` : ""}</span><b>${brl(res.entradaValor)} (${pctTxt(res.entradaPct)})${res.entradaParcelas > 1 ? `<br><small>${res.entradaParcelas}x de ${brl(res.entradaParcelaValor)}</small>` : ""}</b></div>
@@ -574,7 +598,7 @@
     ${mostraTotais() ? `<div><span>Total pago (entrada${res.baloes && res.baloes.length ? " + balão" : ""} + parcelas)</span><b>${brl(res.totalPago)}</b></div>
     <div><span>Total de juros</span><b>${brl(res.totalJuros)}</b></div>` : ""}
     ${res.totalSeguros + res.totalTarifas > 0 ? `<div><span>Seguros e tarifas</span><b>${brl(res.totalSeguros + res.totalTarifas)}</b></div>` : ""}
-    ${res.cetAa != null && (cond.taxa_aa > 0 || res.cetFixo) ? `<div><span>${res.cetFixo ? "CET" : "CET aproximado"}</span><b>${fmtNum(res.cetAa)}% a.a.${IDX[res.indexador] ? " + " + IDX[res.indexador] : ""}</b></div>` : ""}
+    ${res.cetAa != null && (res.taxaMensal > 0 || res.cetFixo) ? `<div><span>${res.cetFixo ? "CET" : "CET aproximado"}</span><b>${fmtNum(res.cetAa)}% a.a.${IDX[res.indexador] ? " + " + IDX[res.indexador] : ""}</b></div>` : ""}
     ${mostraTotais() ? `<div><span>Renda mínima sugerida</span><b>${brl(res.rendaMinima)}</b></div>` : ""}
   </div></div>`;
             usar.disabled = false; comp.disabled = false;
@@ -723,13 +747,12 @@
         const dl = (pares) => `<dl class="pp-dl">${pares.map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join("")}</dl>`;
         const resumo = [
             ["Condição", esc(snap.condicao_nome)],
-            ["Sistema", snap.sistema === "sac" ? "SAC (parcelas decrescentes)" : "Price (parcelas fixas)"],
             ["Valor do imóvel", brl(snap.valor_imovel)],
             ["Entrada", entradaTxt(snap)],
             ["Valor financiado", brl(snap.valor_financiado)],
             ["Prazo", `${snap.prazo_meses} meses`],
             ["Parcela", snap.sistema === "sac" && snap.parcela_final < snap.parcela_inicial - 0.005 ? `${brl(snap.parcela_inicial)} → ${brl(snap.parcela_final)}` : brl(snap.parcela_inicial)],
-            ["Juros", snap.taxa_aa > 0 ? `${fmtNum(snap.taxa_aa)}% a.a.` : "sem juros"]
+            ["Juros / correção", esc(jurosTxt(snap))]
         ];
         if (Array.isArray(snap.baloes) && snap.baloes.length) resumo.push(["Balão", balaoTexto(snap).replace(/^ · Balão /, "")]);
         if (temCet(snap)) resumo.push(["CET", cetTxt(snap)]);
