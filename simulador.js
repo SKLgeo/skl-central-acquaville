@@ -86,7 +86,8 @@
         const minPct = entradaMinimaPct(cond);
         const erros = [];
         if (valor <= 0) erros.push("Informe o valor do imóvel.");
-        else if (entradaPct + 1e-9 < minPct) erros.push(`Entrada mínima desta condição: ${pctTxt(minPct)} (${brl((valor * minPct) / 100)}).`);
+        // compara em reais com folga de 1 centavo: 10% de R$ 478.156,14 = R$ 47.815,614, arredondado para R$ 47.815,61
+        else if (entradaValor + 0.01 < (valor * minPct) / 100) erros.push(`Entrada mínima desta condição: ${pctTxt(minPct)} (${brl((valor * minPct) / 100)}).`);
         if (valor > 0 && pv <= 0) erros.push(totalBaloes > 0 ? "A entrada mais os balões não pode ultrapassar o valor do imóvel." : "A entrada precisa ser menor que o valor do imóvel.");
         if (prazo < cond.prazo_min_meses || prazo > cond.prazo_max_meses) erros.push(`Prazo desta condição: de ${cond.prazo_min_meses} a ${cond.prazo_max_meses} meses.`);
         if (baloes.length) {
