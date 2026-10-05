@@ -29,6 +29,9 @@
         "mapa.imagem_substituida": "trocou a imagem do mapa interativo",
         "user.phone_updated": "atualizou o celular (WhatsApp) de um usuário",
         "user.access_renewed": "renovou o prazo de acesso de um usuário",
+        "user.email_changed": "alterou o e-mail de acesso de um usuário",
+        "user.profile_updated": "alterou o cadastro (nome, celular ou CPF) de um usuário",
+        "config.whatsapp_message_updated": "alterou a mensagem de acesso pelo WhatsApp",
         "user.created_direct": "criou um acesso direto"
     };
     const SUPABASE_URL = "https://xigwlofqkmiibzbongkn.supabase.co";
@@ -41,7 +44,7 @@
     // uma conta com acesso múltiplo veria os empreendimentos de outro cliente
     // dentro do app com a marca da Acquaville.
     const SLUGS_PERMITIDOS = [ "acquaville" ];
-    const APP_VERSION = "0.4.5";
+    const APP_VERSION = "0.4.6";
     if ($("appVersionText")) $("appVersionText").textContent = `v${APP_VERSION}`;
     const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
         auth: {
@@ -254,6 +257,7 @@
         });
         $("confirmResetPasswordButton").addEventListener("click", confirmResetPassword);
         $("savePhoneButton").addEventListener("click", salvarTelefoneUsuario);
+        $("saveEditUserButton").addEventListener("click", salvarEdicaoUsuario);
         $("saveRenewButton").addEventListener("click", salvarRenovacao);
         $("confirmDeleteUserButton").addEventListener("click", confirmDeleteUser);
         document.querySelectorAll(".dialog-close").forEach(button => {
@@ -595,6 +599,7 @@
         connectRealtime();
         iniciarSimulador(podeGerenciar);
         if (podeGerenciar) carregarPrazosReserva();
+        if (podeGerenciar) carregarMensagemWhatsApp();
         window.SKLPushWeb?.oferecer(sb, currentUser.id);
         showPage("dashboard");
         if (vertical) {
@@ -667,7 +672,7 @@
             [ "prazoPedidoInput", "prazoValidadeInput", "prazoBloqueioInput" ].forEach(id => {
                 $(id).addEventListener("input", () => {
                     // máscara: só dígitos e os dois-pontos entram sozinhos antes dos 2 últimos (4800 → 48:00)
-                    const dig = $(id).value.replace(/D/g, "").slice(0, 5);
+                    const dig = $(id).value.replace(/\D/g, "").slice(0, 5);
                     $(id).value = dig.length > 2 ? `${dig.slice(0, -2)}:${dig.slice(-2)}` : dig;
                     pintarResumoPrazos();
                 });
@@ -2514,7 +2519,8 @@ async function loadUsers() {
             active: v.ativo,
             expires_at: v.expira_em,
             email: contatos.get(v.usuario_id)?.email || "",
-            telefone: contatos.get(v.usuario_id)?.telefone || v.perfis?.telefone || ""
+            telefone: contatos.get(v.usuario_id)?.telefone || v.perfis?.telefone || "",
+            cpf: contatos.get(v.usuario_id)?.cpf || ""
         }));
         const {data: conviteRows} = await sb.from("convites").select("id, email, papel, expira_em").eq("empreendimento_id", empId).is("usado_em", null).gt("expira_em", (new Date).toISOString());
         invites = conviteRows || [];
@@ -2568,7 +2574,7 @@ function celulaWhatsApp(user) {
             const expirado = user.expires_at && new Date(user.expires_at).getTime() < Date.now();
             const vencendo = acessoVencendo(user);
             const renovar = user.expires_at ? `<button class="row-button${expirado || vencendo ? " destaque" : ""}" data-user-renew="${h(user.id)}">${expirado ? "Novo prazo / liberar" : vencendo ? "Renovar prazo" : "Alterar prazo"}</button>` : "";
-            return `<tr><td><strong>${h(user.display_name)}</strong></td><td>${h(user.email || "—")}</td><td>${celulaWhatsApp(user)}</td><td>${h(ROLE[user.papel])}</td><td>${userStatusPill(user)}</td><td>—</td><td style="display:flex;gap:6px;flex-wrap:wrap">${renovar}<button class="row-button" data-user-emp="${h(user.id)}" data-user-emp-name="${h(user.display_name)}">Empreendimentos</button><button class="row-button" data-user-reset="${h(user.id)}">Redefinir senha</button><button class="row-button" data-user-toggle="${h(user.id)}" data-next-active="${user.active ? "0" : "1"}">${toggleLabel}</button><button class="row-button danger-button" data-user-delete="${h(user.id)}" data-user-name="${h(user.display_name)}">Excluir</button></td></tr>`;
+            return `<tr><td><strong>${h(user.display_name)}</strong></td><td>${h(user.email || "—")}</td><td>${celulaWhatsApp(user)}</td><td>${h(ROLE[user.papel])}</td><td>${userStatusPill(user)}</td><td>—</td><td style="display:flex;gap:6px;flex-wrap:wrap"><button class="row-button" data-user-edit="${h(user.id)}">Editar cadastro</button>${renovar}<button class="row-button" data-user-emp="${h(user.id)}" data-user-emp-name="${h(user.display_name)}">Empreendimentos</button><button class="row-button" data-user-reset="${h(user.id)}">Redefinir senha</button><button class="row-button" data-user-toggle="${h(user.id)}" data-next-active="${user.active ? "0" : "1"}">${toggleLabel}</button><button class="row-button danger-button" data-user-delete="${h(user.id)}" data-user-name="${h(user.display_name)}">Excluir</button></td></tr>`;
         }).join("");
         $("userTableBody").querySelectorAll("[data-user-emp]").forEach(button => button.addEventListener("click", () => openUserEmpreendimentosDialog(button.dataset.userEmp, button.dataset.userEmpName)));
         $("userTableBody").querySelectorAll("[data-user-reset]").forEach(button => button.addEventListener("click", () => resetUser(button.dataset.userReset)));
@@ -2576,6 +2582,7 @@ function celulaWhatsApp(user) {
         $("userTableBody").querySelectorAll("[data-user-delete]").forEach(button => button.addEventListener("click", () => deleteUser(button.dataset.userDelete, button.dataset.userName)));
         $("userTableBody").querySelectorAll("[data-user-phone]").forEach(button => button.addEventListener("click", () => abrirDialogoTelefone(button.dataset.userPhone)));
         $("userTableBody").querySelectorAll("[data-user-whats]").forEach(button => button.addEventListener("click", () => enviarAcessoWhatsApp(button.dataset.userWhats)));
+        $("userTableBody").querySelectorAll("[data-user-edit]").forEach(button => button.addEventListener("click", () => abrirDialogoEditarUsuario(button.dataset.userEdit)));
         $("userTableBody").querySelectorAll("[data-user-renew]").forEach(button => button.addEventListener("click", () => abrirDialogoRenovar(button.dataset.userRenew)));
         const vencendoQtd = users.filter(u => canManage(u) && acessoVencendo(u)).length;
         const expiradoQtd = users.filter(u => canManage(u) && acessoExpirado(u)).length;
@@ -2725,25 +2732,154 @@ async function createDirectUser() {
     function linkWhatsApp(telefone, texto) {
         return `https://wa.me/55${telefoneDigitos(telefone)}?text=${encodeURIComponent(texto)}`;
     }
+    // Texto da mensagem: a empresa edita em Configurações (empreendimentos.config.whatsapp_mensagem).
+    // Marcadores: {nome} {app} {empreendimento} {link} {email}. Linha com marcador vazio some.
+    const MENSAGEM_WHATSAPP_PADRAO = "Olá, {nome}! Seu acesso foi criado: {app} — {empreendimento}.\n\nAcesse: {link}\nLogin (e-mail): {email}\n\nSenha enviada para seu e-mail, qualquer dúvida fale com a gente.";
+    let mensagemWhatsCache = null;
+    async function modeloMensagemWhatsApp() {
+        if (mensagemWhatsCache !== null) return mensagemWhatsCache || MENSAGEM_WHATSAPP_PADRAO;
+        try {
+            const {data: data} = await sb.from("empreendimentos").select("config").eq("id", empreendimentoId).maybeSingle();
+            mensagemWhatsCache = typeof data?.config?.whatsapp_mensagem === "string" ? data.config.whatsapp_mensagem : "";
+        } catch {
+            mensagemWhatsCache = "";
+        }
+        return mensagemWhatsCache || MENSAGEM_WHATSAPP_PADRAO;
+    }
+    function preencherMensagemWhatsApp(modelo, valores) {
+        const linhas = [];
+        for (const linha of String(modelo).split("\n")) {
+            // linha com {link} ou {email} sem valor some; {nome} vazio só tira a vírgula ("Olá, !" → "Olá!")
+            const marcas = linha.match(/\{(link|email)\}/g) || [];
+            if (marcas.some(m => !String(valores[m.slice(1, -1)] || "").trim())) continue;
+            linhas.push(linha.replace(/\{(nome|app|empreendimento|link|email)\}/g, (_, chave) => String(valores[chave] || "").trim()).replace(/,\s*([!.?])/g, "$1"));
+        }
+        return linhas.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+    }
     async function mensagemAcessoWhatsApp({nome: nome, papel: papel, email: email, codigo: codigo, contaReaproveitada: contaReaproveitada, reenvio: reenvio}) {
         const links = await linksDeAcesso();
         const ehCorretor = papel === "corretor";
         const link = ehCorretor ? links.corretor : links.central;
         const app = ehCorretor ? "App do Corretor" : "Central de Vendas";
         const primeiro = String(nome || "").trim().split(/\s+/)[0] || "";
-        const linhas = [ `Olá${primeiro ? ", " + primeiro : ""}! ${reenvio ? "Aqui está o seu acesso" : "Seu acesso foi criado"}: ${app} — ${empreendimentoNomeAtual}.`, "" ];
-        if (link) linhas.push(`Acesse: ${link}`);
         if (codigo) {
+            // Convite por código: a pessoa ainda não tem senha, então o texto precisa explicar o código.
+            const linhas = [ `Olá${primeiro ? ", " + primeiro : ""}! Seu acesso foi criado: ${app} — ${empreendimentoNomeAtual}.`, "" ];
+            if (link) linhas.push(`Acesse: ${link}`);
             linhas.push(`Toque em "Tenho um código de primeiro acesso" e use o código: ${codigo}`);
-            linhas.push("Você mesmo vai criar a sua senha.");
-        } else {
-            if (email) linhas.push(`Login (e-mail): ${email}`);
-            if (contaReaproveitada) linhas.push("Senha: a mesma que você já usa.");
-            else if (reenvio) linhas.push("Senha: a que você já recebeu. Se não lembrar, peça à Central para redefinir.");
-            else linhas.push(links.emailComSenha ? "Senha: enviada para o seu e-mail." : "Senha: a Central vai te passar.");
+            linhas.push("Você mesmo vai criar a sua senha.", "", "Qualquer dúvida, fale com a gente.");
+            return linhas.join("\n");
         }
-        linhas.push("", "Qualquer dúvida, fale com a Central.");
-        return linhas.join("\n");
+        let texto = preencherMensagemWhatsApp(await modeloMensagemWhatsApp(), { nome: primeiro, app: app, empreendimento: empreendimentoNomeAtual, link: link, email: email });
+        if (contaReaproveitada) texto += "\n\nObs.: use a mesma senha que você já usa.";
+        return texto;
+    }
+    async function carregarMensagemWhatsApp() {
+        const painel = $("whatsMensagemPanel");
+        if (!painel) return;
+        const ehAdmin = currentUser.papel === "administrador";
+        mensagemWhatsCache = null;
+        await modeloMensagemWhatsApp();
+        $("whatsMensagemInput").value = mensagemWhatsCache || MENSAGEM_WHATSAPP_PADRAO;
+        $("whatsMensagemInput").readOnly = !ehAdmin;
+        $("whatsMensagemMessage").hidden = true;
+        painel.hidden = false;
+        const previa = async () => {
+            const links = await linksDeAcesso();
+            $("whatsMensagemPrevia").textContent = preencherMensagemWhatsApp($("whatsMensagemInput").value || MENSAGEM_WHATSAPP_PADRAO, { nome: "Maria", app: "App do Corretor", empreendimento: empreendimentoNomeAtual, link: links.corretor, email: "maria@exemplo.com" });
+        };
+        previa();
+        if (painel.dataset.ligado) return;
+        painel.dataset.ligado = "1";
+        $("whatsMensagemInput").addEventListener("input", previa);
+        const salvar = async texto => {
+            if (currentUser.papel !== "administrador") return;
+            const botao = $("whatsMensagemSalvar");
+            botao.disabled = true;
+            try {
+                const {error: error} = await sb.rpc("definir_mensagem_whatsapp", { p_empreendimento_id: empreendimentoId, p_texto: texto });
+                if (error) throw error;
+                mensagemWhatsCache = (texto || "").trim() === MENSAGEM_WHATSAPP_PADRAO ? "" : (texto || "").trim();
+                $("whatsMensagemInput").value = mensagemWhatsCache || MENSAGEM_WHATSAPP_PADRAO;
+                previa();
+                showMessage($("whatsMensagemMessage"), "Mensagem salva. Vale para os próximos envios pelo WhatsApp.", true);
+                loadAudit();
+            } catch (erro) {
+                showMessage($("whatsMensagemMessage"), erro.message === "FORBIDDEN" ? "Somente o administrador pode alterar a mensagem." : traduzErro(erro.message));
+            } finally {
+                botao.disabled = false;
+            }
+        };
+        painel.addEventListener("submit", event => {
+            event.preventDefault();
+            const texto = $("whatsMensagemInput").value.trim();
+            salvar(texto === MENSAGEM_WHATSAPP_PADRAO ? null : texto);
+        });
+        $("whatsMensagemPadrao").addEventListener("click", () => {
+            if (confirm("Voltar ao texto padrão da mensagem?")) salvar(null);
+        });
+    }
+    // ===== Editar cadastro (nome, e-mail, celular, CPF) =====
+    function formatarCpf(valor) {
+        const d = String(valor || "").replace(/\D/g, "");
+        return d.length === 11 ? `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}` : valor || "";
+    }
+    let editDialogUser = null;
+    function abrirDialogoEditarUsuario(userId) {
+        const user = users.find(u => u.id === userId);
+        if (!user) return;
+        editDialogUser = user;
+        $("editUserTitulo").textContent = user.display_name;
+        $("editUserNome").value = user.display_name === "—" ? "" : user.display_name;
+        $("editUserEmail").value = user.email || "";
+        $("editUserTelefone").value = user.telefone ? formatarTelefone(user.telefone) : "";
+        $("editUserCpf").value = user.cpf ? formatarCpf(user.cpf) : "";
+        $("editUserMessage").hidden = true;
+        $("saveEditUserButton").disabled = false;
+        $("editUserDialog").showModal();
+    }
+    async function salvarEdicaoUsuario() {
+        const user = editDialogUser;
+        if (!user) return;
+        const nome = $("editUserNome").value.trim();
+        const email = $("editUserEmail").value.trim().toLowerCase();
+        const telefone = $("editUserTelefone").value.trim();
+        const cpf = $("editUserCpf").value.trim();
+        if (!nome) return showMessage($("editUserMessage"), "Informe o nome.");
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return showMessage($("editUserMessage"), "Informe um e-mail válido.");
+        if (telefone && !telefoneValido(telefone)) return showMessage($("editUserMessage"), "Celular inválido. Informe DDD + número, ex.: (66) 99999-0000.");
+        if (cpf && cpf.replace(/\D/g, "").length !== 11) return showMessage($("editUserMessage"), "CPF inválido: informe os 11 números.");
+        const trocouEmail = email !== String(user.email || "").toLowerCase();
+        if (trocouEmail && !confirm(`Trocar o e-mail de acesso de ${user.display_name} para ${email}?\n\nA pessoa passa a entrar com o e-mail novo. A senha continua a mesma.`)) return;
+        const botao = $("saveEditUserButton");
+        botao.disabled = true;
+        try {
+            const {error: error} = await sb.rpc("atualizar_cadastro_usuario", {
+                p_empreendimento_id: empreendimentoId,
+                p_usuario_id: user.id,
+                p_nome: nome,
+                p_cpf: cpf || null,
+                p_telefone: telefone || null
+            });
+            if (error) throw error;
+            if (trocouEmail) {
+                try {
+                    await invokeConvites({ action: "atualizar_email_usuario", empreendimento_slug: empreendimentoSlugAtual, usuario_id: user.id, novo_email: email });
+                } catch (erroEmail) {
+                    await loadUsers();
+                    botao.disabled = false;
+                    return showMessage($("editUserMessage"), `Nome, celular e CPF foram salvos, mas o e-mail não foi trocado: ${traduzErro(erroEmail.message)}`);
+                }
+            }
+            $("editUserDialog").close();
+            toast(trocouEmail ? "Cadastro salvo. O login agora é o e-mail novo." : "Cadastro salvo.");
+            await loadUsers();
+            loadAudit();
+        } catch (erro) {
+            showMessage($("editUserMessage"), erro.message === "FORBIDDEN" ? "Você não tem permissão para alterar este cadastro." : traduzErro(erro.message));
+        } finally {
+            botao.disabled = false;
+        }
     }
     function botaoWhatsApp(elemento, href) {
         elemento.href = href;
