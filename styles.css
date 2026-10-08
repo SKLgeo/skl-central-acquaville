@@ -201,3 +201,9 @@ td .row-button.destaque{background:#fff0cb;color:#80540a}
 @media(max-width:1180px){.commission-rules-grid{grid-template-columns:1fr}}
 .commission-rules-grid input.regra-percentual{width:84px}
 .whats-previa{margin:0;white-space:pre-wrap;word-break:break-word;background:#e7f6ec;border:1px solid #c8e8d2;border-radius:12px;padding:12px 14px;font:13px/1.5 Inter,"Segoe UI",Arial,sans-serif;color:#1f3a2a}#whatsMensagemInput{resize:vertical;min-height:150px}
+
+/* Busca da tela Usuários */
+.users-toolbar{margin:0 0 12px;flex-wrap:wrap;align-items:center}
+.users-toolbar input[type="search"]{flex:1 1 260px;min-width:0}
+.users-search-count{color:#5b6b63;font-size:13px;white-space:nowrap}
+.empty-cell{text-align:center;color:#6b7a73;padding:22px 10px}

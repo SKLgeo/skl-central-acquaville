@@ -44,7 +44,7 @@
     // uma conta com acesso múltiplo veria os empreendimentos de outro cliente
     // dentro do app com a marca da Acquaville.
     const SLUGS_PERMITIDOS = [ "acquaville" ];
-    const APP_VERSION = "0.4.8";
+    const APP_VERSION = "0.4.9";
     if ($("appVersionText")) $("appVersionText").textContent = `v${APP_VERSION}`;
     const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
         auth: {
@@ -146,6 +146,8 @@
             }
         }));
         $("lotSearchInput").addEventListener("input", renderLots);
+        if ($("userSearchInput")) $("userSearchInput").addEventListener("input", renderUsers);
+        if ($("userRoleFilter")) $("userRoleFilter").addEventListener("change", renderUsers);
         $("lotStatusFilter").addEventListener("change", renderLots);
         $("toggleLotViewButton").addEventListener("click", () => {
             $("lotMapPanel").hidden = !$("lotMapPanel").hidden;
@@ -2606,8 +2608,26 @@ function celulaWhatsApp(user) {
             toast(error.message);
         }
     }
+    // Busca da tela Usuários: nome, e-mail, celular ou CPF (sem diferenciar acento/maiúscula) + filtro de perfil.
+    function semAcento(texto) {
+        return String(texto || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+    }
+    function usuariosFiltrados() {
+        const termo = semAcento(($("userSearchInput")?.value || "").trim());
+        const digitos = termo.replace(/D/g, "");
+        const papel = $("userRoleFilter")?.value || "";
+        return users.filter(user => {
+            if (papel && user.papel !== papel) return false;
+            if (!termo) return true;
+            if (semAcento(user.display_name).includes(termo) || semAcento(user.email).includes(termo)) return true;
+            return digitos.length >= 3 && (String(user.telefone || "").replace(/D/g, "").includes(digitos) || String(user.cpf || "").replace(/D/g, "").includes(digitos));
+        }).sort((x, y) => semAcento(x.display_name).localeCompare(semAcento(y.display_name)));
+    }
     function renderUsers() {
-        $("userTableBody").innerHTML = users.map(user => {
+        const lista = usuariosFiltrados();
+        if ($("userSearchCount")) $("userSearchCount").textContent = lista.length === users.length ? `${users.length} usuário${users.length === 1 ? "" : "s"}` : `${lista.length} de ${users.length}`;
+        $("userTableBody").innerHTML = lista.length ? "" : '<tr><td colspan="7" class="empty-cell">Nenhum usuário encontrado para esta busca.</td></tr>';
+        if (lista.length) $("userTableBody").innerHTML = lista.map(user => {
             if (!canManage(user)) {
                 return `<tr><td>${nomeComFoto(user)}</td><td>${h(user.email || "—")}</td><td>${celulaWhatsApp(user)}</td><td>${h(ROLE[user.papel])}</td><td>${userStatusPill(user)}</td><td>—</td><td>${user.id === currentUser.id ? `Conta atual <button class="row-button" data-user-foto="${h(user.id)}">Foto</button>` : "—"}</td></tr>`;
             }
