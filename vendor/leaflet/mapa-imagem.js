@@ -20,7 +20,7 @@
   // editor manter o mapa em sincronia com a lista de pontos que ele edita.
   var CORES = {
     disponivel: "#34d399",
-    reservado: "#8f5c07",
+    reservado: "#ffd000", // amarelo forte (o marrom antigo se confundia com o ponto de interesse)
     vendido: "#ff2222",
     bloqueado: "#1e3f66",
     nao_informado: "#4a4a4a"
@@ -36,9 +36,14 @@
     });
   }
   function iconeLote(cor, selecionado) {
+    // reservado ganha contorno escuro e brilho amarelo para se destacar na planta
+    var reservado = cor === CORES.reservado;
+    var sombra = reservado
+      ? "0 0 0 2px #5a3a00,0 0 10px 4px rgba(255,208,0,.9),0 2px 6px rgba(0,0,0,.7)"
+      : "0 0 0 1px rgba(0,0,0,.55),0 2px 6px rgba(0,0,0,.7)";
     return L.divIcon({
       className: "mapa-imagem-marcador-lote",
-      html: '<span style="display:block;width:22px;height:22px;border-radius:50%;background:' + cor + ';border:3px solid ' + (selecionado ? "#ffe08a" : "#fff") + ';box-shadow:0 0 0 1px rgba(0,0,0,.55),0 2px 6px rgba(0,0,0,.7);"></span>',
+      html: '<span style="display:block;width:22px;height:22px;border-radius:50%;background:' + cor + ';border:3px solid ' + (selecionado ? "#ffe08a" : "#fff") + ';box-shadow:' + sombra + ';"></span>',
       iconSize: [22, 22],
       iconAnchor: [11, 11]
     });
