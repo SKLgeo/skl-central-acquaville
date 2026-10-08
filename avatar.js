@@ -66,14 +66,17 @@
         setTimeout(() => { agendado = false; aplicar(document); }, 30);
     }
 
-    function escolherArquivo() {
+    // camera = true abre a câmera do celular direto (frontal); no computador o navegador ignora e abre os arquivos.
+    function escolherArquivo(camera) {
         return new Promise(resolve => {
             const input = document.createElement("input");
             input.type = "file";
             input.accept = "image/*";
+            if (camera) input.setAttribute("capture", "user");
             input.hidden = true;
             document.body.appendChild(input);
             input.addEventListener("change", () => { resolve(input.files && input.files[0] || null); input.remove(); }, { once: true });
+            input.addEventListener("cancel", () => { resolve(null); input.remove(); }, { once: true });
             input.click();
         });
     }
@@ -106,9 +109,10 @@
         return texto || "Não foi possível salvar a foto.";
     }
 
-    // Abre a galeria, envia e grava a foto da pessoa. Devolve o caminho novo, ou null se a pessoa cancelou.
-    async function trocar(usuarioId, pathAntigo) {
-        const arquivo = await escolherArquivo();
+    // Abre a galeria (ou a câmera, com opcoes.camera), envia e grava a foto da pessoa.
+    // Devolve o caminho novo, ou null se a pessoa cancelou.
+    async function trocar(usuarioId, pathAntigo, opcoes) {
+        const arquivo = await escolherArquivo(!!(opcoes && opcoes.camera));
         if (!arquivo) return null;
         try {
             const blob = await reduzir(arquivo);
@@ -143,6 +147,11 @@
         return data ? data.foto_path || null : null;
     }
 
+    // Celular/tablet (tela de toque): mostra o botão "Tirar foto". No computador fica só a escolha de arquivo.
+    function temCamera() {
+        try { return window.matchMedia("(pointer: coarse)").matches; } catch { return false; }
+    }
+
     // Quadro "Minha foto" (Configurações da Central, Minha conta do corretor).
     // opcoes: { usuarioId, nome, path, aoMudar(pathNovo) }
     function painel(container, opcoes) {
@@ -151,19 +160,22 @@
         function desenhar(mensagem, erro) {
             container.innerHTML = `<div class="skl-foto-painel">${html(opcoes.nome, path, 72)}<div class="skl-foto-acoes">
               <strong>${esc(opcoes.nome || "")}</strong>
-              <div class="skl-foto-botoes"><button type="button" class="skl-foto-trocar">${path ? "Trocar foto" : "Adicionar foto"}</button>${path ? `<button type="button" class="skl-foto-remover">Remover</button>` : ""}</div>
+              <div class="skl-foto-botoes">${temCamera() ? `<button type="button" class="skl-foto-camera">Tirar foto</button>` : ""}<button type="button" class="skl-foto-trocar">${temCamera() ? "Escolher da galeria" : path ? "Trocar foto" : "Adicionar foto"}</button>${path ? `<button type="button" class="skl-foto-remover">Remover</button>` : ""}</div>
               <small class="skl-foto-msg${erro ? " erro" : ""}">${esc(mensagem || "A foto aparece para a equipe nas listas e cadastros.")}</small></div></div>`;
             aplicar(container);
-            container.querySelector(".skl-foto-trocar").addEventListener("click", async () => {
-                desenhar("Escolha uma foto na galeria…");
+            async function escolher(camera) {
+                desenhar(camera ? "Abrindo a câmera…" : "Escolha uma foto na galeria…");
                 try {
-                    const novo = await trocar(opcoes.usuarioId, path);
+                    const novo = await trocar(opcoes.usuarioId, path, { camera });
                     if (!novo) { desenhar(); return; }
                     path = novo;
                     if (opcoes.aoMudar) opcoes.aoMudar(path);
                     desenhar("Foto atualizada.");
                 } catch (error) { desenhar(error.message, true); }
-            });
+            }
+            container.querySelector(".skl-foto-trocar").addEventListener("click", () => escolher(false));
+            const botaoCamera = container.querySelector(".skl-foto-camera");
+            if (botaoCamera) botaoCamera.addEventListener("click", () => escolher(true));
             const botaoRemover = container.querySelector(".skl-foto-remover");
             if (botaoRemover) botaoRemover.addEventListener("click", async () => {
                 try {

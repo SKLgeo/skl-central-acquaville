@@ -44,7 +44,7 @@
     // uma conta com acesso múltiplo veria os empreendimentos de outro cliente
     // dentro do app com a marca da Acquaville.
     const SLUGS_PERMITIDOS = [ "acquaville" ];
-    const APP_VERSION = "0.4.9";
+    const APP_VERSION = "0.4.10";
     if ($("appVersionText")) $("appVersionText").textContent = `v${APP_VERSION}`;
     const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
         auth: {
@@ -1093,6 +1093,8 @@
         document.querySelectorAll(".nav-button").forEach(button => button.classList.toggle("active", button.dataset.page === name));
         const page = $(`page-${name}`);
         if (page) page.classList.add("active-page");
+        // recarrega a lista ao abrir Usuários: mostra fotos/cadastros que o próprio corretor mudou no app dele
+        if (name === "users" && currentUser && [ "administrador", "central_vendas" ].includes(currentUser.papel)) loadUsers().catch(() => {});
         const titles = {
             dashboard: "Visão geral",
             lots: "Controle de lotes",
