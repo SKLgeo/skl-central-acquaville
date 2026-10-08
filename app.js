@@ -44,7 +44,7 @@
     // uma conta com acesso múltiplo veria os empreendimentos de outro cliente
     // dentro do app com a marca da Acquaville.
     const SLUGS_PERMITIDOS = [ "acquaville" ];
-    const APP_VERSION = "0.4.6";
+    const APP_VERSION = "0.4.7";
     if ($("appVersionText")) $("appVersionText").textContent = `v${APP_VERSION}`;
     const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
         auth: {
@@ -584,6 +584,7 @@
         $("loginView").hidden = true;
         $("appView").hidden = false;
         $("currentUserName").textContent = currentUser.display_name;
+        iniciarFotoPerfil();
         $("currentUserRole").textContent = ROLE[currentUser.papel];
         $("passwordWarning").hidden = true;
         document.querySelectorAll(".admin-or-central").forEach(element => element.hidden = ![ "administrador", "central_vendas" ].includes(currentUser.papel));
@@ -2502,7 +2503,7 @@
     }
 async function loadUsers() {
         const empId = await empreendimentoIdAtual();
-        const {data: vinculos, error: error} = await sb.from("empreendimento_usuarios").select("usuario_id, papel, ativo, expira_em, perfis(nome_exibicao, telefone)").eq("empreendimento_id", empId);
+        const {data: vinculos, error: error} = await sb.from("empreendimento_usuarios").select("usuario_id, papel, ativo, expira_em, perfis(nome_exibicao, telefone, foto_path)").eq("empreendimento_id", empId);
         if (error) {
             toast(error.message);
             return;
@@ -2515,6 +2516,7 @@ async function loadUsers() {
         users = vinculos.map(v => ({
             id: v.usuario_id,
             display_name: v.perfis?.nome_exibicao || "—",
+            foto_path: v.perfis?.foto_path || null,
             papel: v.papel,
             active: v.ativo,
             expires_at: v.expira_em,
@@ -2565,16 +2567,55 @@ function celulaWhatsApp(user) {
         const enviar = canManage(user) ? `<br><button class="row-button whatsapp" data-user-whats="${h(user.id)}">Enviar acesso</button>` : "";
         return `<span style="white-space:nowrap">${h(formatarTelefone(user.telefone))}</span>${editar}${enviar}`;
     }
+    // Foto de perfil (avatar.js): menu lateral, Configurações > Minha foto e lista de usuários.
+    let fotoPerfilIniciada = false;
+    async function iniciarFotoPerfil() {
+        if (!window.SKLAvatar) return;
+        if (!fotoPerfilIniciada) { window.SKLAvatar.init(sb); fotoPerfilIniciada = true; }
+        currentUser.foto_path = await window.SKLAvatar.fotoDe(currentUser.id);
+        desenharMinhaFoto();
+    }
+    function desenharMinhaFoto() {
+        if (!window.SKLAvatar || !currentUser) return;
+        $("currentUserAvatar").innerHTML = window.SKLAvatar.html(currentUser.display_name, currentUser.foto_path, 44);
+        window.SKLAvatar.painel($("minhaFotoPainel"), {
+            usuarioId: currentUser.id, nome: currentUser.display_name, path: currentUser.foto_path,
+            aoMudar: novo => {
+                currentUser.foto_path = novo;
+                $("currentUserAvatar").innerHTML = window.SKLAvatar.html(currentUser.display_name, novo, 44);
+                const eu = users.find(u => u.id === currentUser.id);
+                if (eu) { eu.foto_path = novo; renderUsers(); }
+            }
+        });
+    }
+    function nomeComFoto(user) {
+        if (!window.SKLAvatar) return `<strong>${h(user.display_name)}</strong>`;
+        return `<span class="skl-avatar-nome">${window.SKLAvatar.html(user.display_name, user.foto_path, 32)}<strong>${h(user.display_name)}</strong></span>`;
+    }
+    async function trocarFotoUsuario(id) {
+        const user = users.find(u => u.id === id);
+        if (!user || !window.SKLAvatar) return;
+        try {
+            const novo = await window.SKLAvatar.trocar(id, user.foto_path);
+            if (!novo) return;
+            user.foto_path = novo;
+            if (id === currentUser.id) { currentUser.foto_path = novo; desenharMinhaFoto(); }
+            renderUsers();
+            toast("Foto atualizada.");
+        } catch (error) {
+            toast(error.message);
+        }
+    }
     function renderUsers() {
         $("userTableBody").innerHTML = users.map(user => {
             if (!canManage(user)) {
-                return `<tr><td><strong>${h(user.display_name)}</strong></td><td>${h(user.email || "—")}</td><td>${celulaWhatsApp(user)}</td><td>${h(ROLE[user.papel])}</td><td>${userStatusPill(user)}</td><td>—</td><td>${user.id === currentUser.id ? "Conta atual" : "—"}</td></tr>`;
+                return `<tr><td>${nomeComFoto(user)}</td><td>${h(user.email || "—")}</td><td>${celulaWhatsApp(user)}</td><td>${h(ROLE[user.papel])}</td><td>${userStatusPill(user)}</td><td>—</td><td>${user.id === currentUser.id ? `Conta atual <button class="row-button" data-user-foto="${h(user.id)}">Foto</button>` : "—"}</td></tr>`;
             }
             const toggleLabel = user.active ? "Desativar" : "Reativar";
             const expirado = user.expires_at && new Date(user.expires_at).getTime() < Date.now();
             const vencendo = acessoVencendo(user);
             const renovar = user.expires_at ? `<button class="row-button${expirado || vencendo ? " destaque" : ""}" data-user-renew="${h(user.id)}">${expirado ? "Novo prazo / liberar" : vencendo ? "Renovar prazo" : "Alterar prazo"}</button>` : "";
-            return `<tr><td><strong>${h(user.display_name)}</strong></td><td>${h(user.email || "—")}</td><td>${celulaWhatsApp(user)}</td><td>${h(ROLE[user.papel])}</td><td>${userStatusPill(user)}</td><td>—</td><td style="display:flex;gap:6px;flex-wrap:wrap"><button class="row-button" data-user-edit="${h(user.id)}">Editar cadastro</button>${renovar}<button class="row-button" data-user-emp="${h(user.id)}" data-user-emp-name="${h(user.display_name)}">Empreendimentos</button><button class="row-button" data-user-reset="${h(user.id)}">Redefinir senha</button><button class="row-button" data-user-toggle="${h(user.id)}" data-next-active="${user.active ? "0" : "1"}">${toggleLabel}</button><button class="row-button danger-button" data-user-delete="${h(user.id)}" data-user-name="${h(user.display_name)}">Excluir</button></td></tr>`;
+            return `<tr><td>${nomeComFoto(user)}</td><td>${h(user.email || "—")}</td><td>${celulaWhatsApp(user)}</td><td>${h(ROLE[user.papel])}</td><td>${userStatusPill(user)}</td><td>—</td><td style="display:flex;gap:6px;flex-wrap:wrap"><button class="row-button" data-user-foto="${h(user.id)}">Foto</button><button class="row-button" data-user-edit="${h(user.id)}">Editar cadastro</button>${renovar}<button class="row-button" data-user-emp="${h(user.id)}" data-user-emp-name="${h(user.display_name)}">Empreendimentos</button><button class="row-button" data-user-reset="${h(user.id)}">Redefinir senha</button><button class="row-button" data-user-toggle="${h(user.id)}" data-next-active="${user.active ? "0" : "1"}">${toggleLabel}</button><button class="row-button danger-button" data-user-delete="${h(user.id)}" data-user-name="${h(user.display_name)}">Excluir</button></td></tr>`;
         }).join("");
         $("userTableBody").querySelectorAll("[data-user-emp]").forEach(button => button.addEventListener("click", () => openUserEmpreendimentosDialog(button.dataset.userEmp, button.dataset.userEmpName)));
         $("userTableBody").querySelectorAll("[data-user-reset]").forEach(button => button.addEventListener("click", () => resetUser(button.dataset.userReset)));
@@ -2584,6 +2625,7 @@ function celulaWhatsApp(user) {
         $("userTableBody").querySelectorAll("[data-user-whats]").forEach(button => button.addEventListener("click", () => enviarAcessoWhatsApp(button.dataset.userWhats)));
         $("userTableBody").querySelectorAll("[data-user-edit]").forEach(button => button.addEventListener("click", () => abrirDialogoEditarUsuario(button.dataset.userEdit)));
         $("userTableBody").querySelectorAll("[data-user-renew]").forEach(button => button.addEventListener("click", () => abrirDialogoRenovar(button.dataset.userRenew)));
+        $("userTableBody").querySelectorAll("[data-user-foto]").forEach(button => button.addEventListener("click", () => trocarFotoUsuario(button.dataset.userFoto)));
         const vencendoQtd = users.filter(u => canManage(u) && acessoVencendo(u)).length;
         const expiradoQtd = users.filter(u => canManage(u) && acessoExpirado(u)).length;
         const partes = [];

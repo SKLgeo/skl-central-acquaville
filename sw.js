@@ -1,10 +1,12 @@
 // Service worker do link web do Central Acquaville (instalar como app pelo navegador).
-const CACHE_NAME = "skl-acquaville-central-v11";
+const CACHE_NAME = "skl-acquaville-central-v12";
 const CORE_ASSETS = [
   "./",
   "./index.html",
   "./styles.css",
   "./app.js",
+  "./avatar.js",
+  "./avatar.css",
   "./web.js",
   "./logo.png",
   "./manifest.webmanifest",

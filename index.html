@@ -15,6 +15,7 @@
   <link rel="icon" type="image/png" href="assets/icons/icon-192.png" />
   <link rel="stylesheet" href="vendor/leaflet/leaflet.css" />
   <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="avatar.css" />
 </head>
 <body>
   <section id="loginView" class="login-view">
@@ -86,7 +87,7 @@
         <button class="nav-button" data-page="reports"><span>▤</span> Relatórios</button>
         <button class="nav-button" data-page="settings"><span>⚙</span> Configurações</button>
       </nav>
-      <div class="sidebar-user"><strong id="currentUserName">Usuário</strong><span id="currentUserRole">—</span><button id="logoutButton">Sair</button></div>
+      <div class="sidebar-user"><span id="currentUserAvatar" class="sidebar-avatar"></span><strong id="currentUserName">Usuário</strong><span id="currentUserRole">—</span><button id="logoutButton">Sair</button></div>
     </aside>
 
     <main class="workspace">
@@ -279,7 +280,7 @@
         </div>
       </section>
 
-      <section id="page-settings" class="page"><div class="settings-grid"><form id="passwordForm" class="panel form-panel"><span class="eyebrow">SEGURANÇA</span><h2>Alterar minha senha</h2><label><span>Nova senha</span><input id="changedPasswordInput" type="password" required minlength="6" /></label><button class="primary-button">Alterar senha</button></form><div class="panel form-panel"><span class="eyebrow">EMPREENDIMENTO</span><h2 id="settingsEmpreendimentoNome">—</h2><p id="settingsEmpreendimentoTipo" class="muted-text">—</p><button id="switchEmpreendimentoButton" type="button" class="secondary-button full-width">Trocar empreendimento</button></div><div class="panel form-panel"><span class="eyebrow">SOBRE</span><h2>Versão instalada</h2><p id="appVersionText">—</p></div>
+      <section id="page-settings" class="page"><div class="settings-grid"><div class="panel form-panel"><span class="eyebrow">PERFIL</span><h2>Minha foto</h2><div id="minhaFotoPainel"></div></div><form id="passwordForm" class="panel form-panel"><span class="eyebrow">SEGURANÇA</span><h2>Alterar minha senha</h2><label><span>Nova senha</span><input id="changedPasswordInput" type="password" required minlength="6" /></label><button class="primary-button">Alterar senha</button></form><div class="panel form-panel"><span class="eyebrow">EMPREENDIMENTO</span><h2 id="settingsEmpreendimentoNome">—</h2><p id="settingsEmpreendimentoTipo" class="muted-text">—</p><button id="switchEmpreendimentoButton" type="button" class="secondary-button full-width">Trocar empreendimento</button></div><div class="panel form-panel"><span class="eyebrow">SOBRE</span><h2>Versão instalada</h2><p id="appVersionText">—</p></div>
         <div class="panel form-panel admin-or-central" id="simuladorAdminPanel" hidden></div>
         <form class="panel form-panel admin-or-central" id="prazosReservaPanel" hidden>
           <span class="eyebrow">RESERVAS</span>
@@ -478,6 +479,7 @@
 
   <script src="vendor/firebase/firebase-app-compat.js"></script>
   <script src="vendor/firebase/firebase-messaging-compat.js"></script>
+  <script src="avatar.js"></script>
   <script src="app.js"></script>
   <script src="web.js"></script>
   <script src="push-web.js"></script>
