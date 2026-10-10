@@ -207,3 +207,4 @@ td .row-button.destaque{background:#fff0cb;color:#80540a}
 .users-toolbar input[type="search"]{flex:1 1 260px;min-width:0}
 .users-search-count{color:#5b6b63;font-size:13px;white-space:nowrap}
 .empty-cell{text-align:center;color:#6b7a73;padding:22px 10px}
+.acesso-nunca{color:#9c3931;font-weight:700;white-space:nowrap}.acesso-antigo{color:#9c3931;white-space:nowrap}.acesso-atencao{color:#80540a;white-space:nowrap}.acesso-recente{color:#247346;white-space:nowrap}

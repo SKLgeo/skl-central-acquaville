@@ -44,7 +44,7 @@
     // uma conta com acesso múltiplo veria os empreendimentos de outro cliente
     // dentro do app com a marca da Acquaville.
     const SLUGS_PERMITIDOS = [ "acquaville" ];
-    const APP_VERSION = "0.4.10";
+    const APP_VERSION = "0.4.11";
     if ($("appVersionText")) $("appVersionText").textContent = `v${APP_VERSION}`;
     const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
         auth: {
@@ -148,6 +148,7 @@
         $("lotSearchInput").addEventListener("input", renderLots);
         if ($("userSearchInput")) $("userSearchInput").addEventListener("input", renderUsers);
         if ($("userRoleFilter")) $("userRoleFilter").addEventListener("change", renderUsers);
+        if ($("userAccessFilter")) $("userAccessFilter").addEventListener("change", renderUsers);
         $("lotStatusFilter").addEventListener("change", renderLots);
         $("toggleLotViewButton").addEventListener("click", () => {
             $("lotMapPanel").hidden = !$("lotMapPanel").hidden;
@@ -600,6 +601,7 @@
         const estoqueTasks = vertical ? [ loadUnidades() ] : [ loadLots() ];
         await Promise.all([ ...estoqueTasks, loadRequests(), loadAudit(), podeGerenciar ? loadUsers() : Promise.resolve(), podeGerenciar ? loadPlanInfo() : Promise.resolve() ]);
         connectRealtime();
+        registrarMeuAcesso();
         iniciarSimulador(podeGerenciar);
         if (podeGerenciar) carregarPrazosReserva();
         if (podeGerenciar) carregarMensagemWhatsApp();
@@ -2526,7 +2528,8 @@ async function loadUsers() {
             expires_at: v.expira_em,
             email: contatos.get(v.usuario_id)?.email || "",
             telefone: contatos.get(v.usuario_id)?.telefone || v.perfis?.telefone || "",
-            cpf: contatos.get(v.usuario_id)?.cpf || ""
+            cpf: contatos.get(v.usuario_id)?.cpf || "",
+            ultimo_acesso: contatos.get(v.usuario_id)?.ultimo_acesso || null
         }));
         const {data: conviteRows} = await sb.from("convites").select("id, email, papel, expira_em").eq("empreendimento_id", empId).is("usado_em", null).gt("expira_em", (new Date).toISOString());
         invites = conviteRows || [];
@@ -2610,20 +2613,55 @@ function celulaWhatsApp(user) {
             toast(error.message);
         }
     }
+    // Último acesso: o mais recente entre o registro do próprio app (registrar_acesso), o último login e a
+    // última renovação de sessão — calculado no banco (listar_contatos_usuarios).
+    const DIA_MS = 24 * 3600 * 1000;
+    function diasSemAcesso(user) {
+        return user.ultimo_acesso ? (Date.now() - new Date(user.ultimo_acesso).getTime()) / DIA_MS : Infinity;
+    }
+    function textoUltimoAcesso(iso) {
+        const quando = new Date(iso);
+        const min = Math.max(0, Math.round((Date.now() - quando.getTime()) / 60000));
+        const hora = quando.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+        if (min < 5) return "agora há pouco";
+        if (min < 60) return `há ${min} min`;
+        const hoje = new Date();
+        if (quando.toDateString() === hoje.toDateString()) return `hoje, ${hora}`;
+        const ontem = new Date(hoje.getTime() - DIA_MS);
+        if (quando.toDateString() === ontem.toDateString()) return `ontem, ${hora}`;
+        const dias = Math.floor((Date.now() - quando.getTime()) / DIA_MS);
+        if (dias < 30) return `há ${dias} dias`;
+        return quando.toLocaleDateString("pt-BR");
+    }
+    function celulaUltimoAcesso(user) {
+        if (!user.ultimo_acesso) return '<span class="acesso-nunca">Nunca acessou</span>';
+        const titulo = new Date(user.ultimo_acesso).toLocaleString("pt-BR");
+        const dias = diasSemAcesso(user);
+        const classe = dias > 30 ? "acesso-antigo" : dias > 7 ? "acesso-atencao" : "acesso-recente";
+        return `<span class="${classe}" title="${h(titulo)}">${h(textoUltimoAcesso(user.ultimo_acesso))}</span>`;
+    }
+    function passaFiltroAcesso(user) {
+        const filtro = $("userAccessFilter")?.value || "";
+        if (!filtro) return true;
+        if (filtro === "nunca") return !user.ultimo_acesso;
+        if (filtro === "recente") return diasSemAcesso(user) <= 7;
+        return diasSemAcesso(user) > Number(filtro);
+    }
     // Busca da tela Usuários: nome, e-mail, celular ou CPF (sem diferenciar acento/maiúscula) + filtro de perfil.
     function semAcento(texto) {
         return String(texto || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
     }
     function usuariosFiltrados() {
         const termo = semAcento(($("userSearchInput")?.value || "").trim());
-        const digitos = termo.replace(/D/g, "");
+        const digitos = termo.replace(/\D/g, "");
         const papel = $("userRoleFilter")?.value || "";
         return users.filter(user => {
             if (papel && user.papel !== papel) return false;
+            if (!passaFiltroAcesso(user)) return false;
             if (!termo) return true;
             if (semAcento(user.display_name).includes(termo) || semAcento(user.email).includes(termo)) return true;
-            return digitos.length >= 3 && (String(user.telefone || "").replace(/D/g, "").includes(digitos) || String(user.cpf || "").replace(/D/g, "").includes(digitos));
-        }).sort((x, y) => semAcento(x.display_name).localeCompare(semAcento(y.display_name)));
+            return digitos.length >= 3 && (String(user.telefone || "").replace(/\D/g, "").includes(digitos) || String(user.cpf || "").replace(/\D/g, "").includes(digitos));
+        }).sort((x, y) => ($("userAccessFilter")?.value && $("userAccessFilter").value !== "recente" ? diasSemAcesso(y) - diasSemAcesso(x) : 0) || semAcento(x.display_name).localeCompare(semAcento(y.display_name)));
     }
     function renderUsers() {
         const lista = usuariosFiltrados();
@@ -2631,13 +2669,13 @@ function celulaWhatsApp(user) {
         $("userTableBody").innerHTML = lista.length ? "" : '<tr><td colspan="7" class="empty-cell">Nenhum usuário encontrado para esta busca.</td></tr>';
         if (lista.length) $("userTableBody").innerHTML = lista.map(user => {
             if (!canManage(user)) {
-                return `<tr><td>${nomeComFoto(user)}</td><td>${h(user.email || "—")}</td><td>${celulaWhatsApp(user)}</td><td>${h(ROLE[user.papel])}</td><td>${userStatusPill(user)}</td><td>—</td><td>${user.id === currentUser.id ? `Conta atual <button class="row-button" data-user-foto="${h(user.id)}">Foto</button>` : "—"}</td></tr>`;
+                return `<tr><td>${nomeComFoto(user)}</td><td>${h(user.email || "—")}</td><td>${celulaWhatsApp(user)}</td><td>${h(ROLE[user.papel])}</td><td>${userStatusPill(user)}</td><td>${celulaUltimoAcesso(user)}</td><td>${user.id === currentUser.id ? `Conta atual <button class="row-button" data-user-foto="${h(user.id)}">Foto</button>` : "—"}</td></tr>`;
             }
             const toggleLabel = user.active ? "Desativar" : "Reativar";
             const expirado = user.expires_at && new Date(user.expires_at).getTime() < Date.now();
             const vencendo = acessoVencendo(user);
             const renovar = user.expires_at ? `<button class="row-button${expirado || vencendo ? " destaque" : ""}" data-user-renew="${h(user.id)}">${expirado ? "Novo prazo / liberar" : vencendo ? "Renovar prazo" : "Alterar prazo"}</button>` : "";
-            return `<tr><td>${nomeComFoto(user)}</td><td>${h(user.email || "—")}</td><td>${celulaWhatsApp(user)}</td><td>${h(ROLE[user.papel])}</td><td>${userStatusPill(user)}</td><td>—</td><td style="display:flex;gap:6px;flex-wrap:wrap"><button class="row-button" data-user-foto="${h(user.id)}">Foto</button><button class="row-button" data-user-edit="${h(user.id)}">Editar cadastro</button>${renovar}<button class="row-button" data-user-emp="${h(user.id)}" data-user-emp-name="${h(user.display_name)}">Empreendimentos</button><button class="row-button" data-user-reset="${h(user.id)}">Redefinir senha</button><button class="row-button" data-user-toggle="${h(user.id)}" data-next-active="${user.active ? "0" : "1"}">${toggleLabel}</button><button class="row-button danger-button" data-user-delete="${h(user.id)}" data-user-name="${h(user.display_name)}">Excluir</button></td></tr>`;
+            return `<tr><td>${nomeComFoto(user)}</td><td>${h(user.email || "—")}</td><td>${celulaWhatsApp(user)}</td><td>${h(ROLE[user.papel])}</td><td>${userStatusPill(user)}</td><td>${celulaUltimoAcesso(user)}</td><td style="display:flex;gap:6px;flex-wrap:wrap"><button class="row-button" data-user-foto="${h(user.id)}">Foto</button><button class="row-button" data-user-edit="${h(user.id)}">Editar cadastro</button>${renovar}<button class="row-button" data-user-emp="${h(user.id)}" data-user-emp-name="${h(user.display_name)}">Empreendimentos</button><button class="row-button" data-user-reset="${h(user.id)}">Redefinir senha</button><button class="row-button" data-user-toggle="${h(user.id)}" data-next-active="${user.active ? "0" : "1"}">${toggleLabel}</button><button class="row-button danger-button" data-user-delete="${h(user.id)}" data-user-name="${h(user.display_name)}">Excluir</button></td></tr>`;
         }).join("");
         $("userTableBody").querySelectorAll("[data-user-emp]").forEach(button => button.addEventListener("click", () => openUserEmpreendimentosDialog(button.dataset.userEmp, button.dataset.userEmpName)));
         $("userTableBody").querySelectorAll("[data-user-reset]").forEach(button => button.addEventListener("click", () => resetUser(button.dataset.userReset)));
@@ -3408,8 +3446,14 @@ async function createDirectUser() {
             atualizarTituloPendentes();
         }
     }
+    function registrarMeuAcesso() {
+        if (empreendimentoId) sb.rpc("registrar_acesso", { p_empreendimento_id: empreendimentoId }).then(() => {}, () => {});
+    }
     document.addEventListener("visibilitychange", () => {
-        if (document.visibilityState === "visible") conferirPedidosNovos();
+        if (document.visibilityState === "visible") {
+            conferirPedidosNovos();
+            registrarMeuAcesso();
+        }
     });
     window.addEventListener("focus", () => conferirPedidosNovos());
     window.addEventListener("online", () => conferirPedidosNovos());
