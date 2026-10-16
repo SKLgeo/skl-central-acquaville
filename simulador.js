@@ -140,7 +140,14 @@
             rendaMinima: primeira / (comprometimento / 100), comprometimento, tabela
         };
     }
-    function entradaParcelasMax(cond) { return Math.max(1, Math.min(12, Math.round(Number(cond && cond.entrada_parcelas_max) || 1))); }
+    // limite da condição (o que o corretor pode escolher)
+    function entradaParcelasMaxCondicao(cond) { return Math.max(1, Math.min(12, Math.round(Number(cond && cond.entrada_parcelas_max) || 1))); }
+    // Acquaville (16/10/2026): a Central divide a entrada em quantas vezes quiser — o limite vira o prazo máximo
+    // da condição. O corretor continua com o limite da condição. Esta cópia (Central) é diferente da do Corretor de propósito.
+    function entradaParcelasMax(cond) {
+        const base = entradaParcelasMaxCondicao(cond);
+        return st.papel === "central" ? Math.max(base, Math.round(Number(cond && cond.prazo_max_meses) || 120)) : base;
+    }
     // indexador: o da faixa do prazo, se a faixa define; senão o da condição, que só vale a partir de
     // indexador_desde_parcela quando a condição define isso
     function indexadorAplicavel(cond, prazo) {
@@ -438,7 +445,8 @@
         const total = lista.reduce((s, b) => s + b.valor, 0);
         $q("#sklSimBalaoTotal", d).value = lista.length ? brl(total) : "";
         const maiorMes = lista.length ? Math.max(...lista.map((b) => b.mes)) : 0;
-        $q("#sklSimBalaoHint", d).textContent = lista.length ? `Balões até o mês ${maiorMes} de ${lista.length} parcela(s) (máximo desta condição: ${cond.balao_max_meses} meses).` : `Até ${cond.balao_max_meses} meses de balão nesta condição.`;
+        const livre = st.papel === "central" ? ` A Central escolhe quantos balões quiser (ex.: ${Math.floor(cond.balao_max_meses / 4)} balões a cada 4 meses), desde que o último caia até o mês ${cond.balao_max_meses}.` : "";
+        $q("#sklSimBalaoHint", d).textContent = (lista.length ? `Balões até o mês ${maiorMes} de ${lista.length} parcela(s) (máximo desta condição: ${cond.balao_max_meses} meses).` : `Até ${cond.balao_max_meses} meses de balão nesta condição.`) + livre;
     }
 
     // ------------------------------------------------------------------ lógica do diálogo
@@ -475,6 +483,8 @@
         const sec = $q("#sklSimBalaoSec", d);
         sec.hidden = !cond.permite_balao;
         if (!cond.permite_balao) { $q("#sklSimBalaoToggle", d).checked = false; $q("#sklSimBalaoCampos", d).hidden = true; return; }
+        // Central: quantos balões quiser, desde que o último caia até o limite de meses da condição (a regra continua valendo)
+        if (st.papel === "central") $q("#sklSimBalaoQtd", d).max = String(Math.max(1, Math.round(Number(cond.balao_max_meses) || 1)));
         if (manter) return;
         const pre = st.ctx && st.ctx._balaoPreenchido;
         if (pre && pre.length) {
@@ -512,7 +522,7 @@
                 de = f.prazo_max_meses + 1;
                 return `${faixa} ${desc}`;
             });
-            const entParc = entradaParcelasMax(cond) > 1 ? ` · entrada em até ${entradaParcelasMax(cond)}x` : "";
+            const entParc = entradaParcelasMaxCondicao(cond) > 1 ? ` · entrada em até ${entradaParcelasMaxCondicao(cond)}x` : "";
             return `${cond.banco ? cond.banco + " · " : ""}${partes.join(" · ")}${entParc}${cond.permite_balao ? " · balão opcional" : ""}`;
         }
         const taxa = cond.taxa_aa > 0 ? `${fmtNum(cond.taxa_aa)}% a.a.${cond.tipo_taxa === "efetiva" ? " (efetiva)" : ""}${IDX[cond.indexador] ? " + " + IDX[cond.indexador] : ""}` : (IDX[cond.indexador] ? `sem juros · corrigido pelo ${IDX[cond.indexador]}` : "sem juros");
@@ -533,9 +543,21 @@
         const n = Math.min(max, Math.max(1, Number(c.entradaParcelas) || 1));
         c.entradaParcelas = n;
         const chips = $q("#sklSimEntradaParcChips", d);
-        chips.innerHTML = Array.from({ length: max }, (_, k) => k + 1).map((k) => `<button type="button" class="skl-sim-chip${k === n ? " on" : ""}" data-eparc="${k}">${k === 1 ? "À vista" : `${k}x`}</button>`).join("");
+        const central = st.papel === "central";
+        // Central: os botões da condição + um campo para qualquer número de vezes
+        const qtdChips = central ? Math.max(entradaParcelasMaxCondicao(cond), 1) : max;
+        chips.innerHTML = Array.from({ length: qtdChips }, (_, k) => k + 1).map((k) => `<button type="button" class="skl-sim-chip${k === n ? " on" : ""}" data-eparc="${k}">${k === 1 ? "À vista" : `${k}x`}</button>`).join("") +
+            (central ? `<label class="skl-sim-chip${n > qtdChips ? " on" : ""}" style="display:inline-flex;align-items:center;gap:6px">Outro: <input type="number" id="sklSimEntradaParcOutro" inputmode="numeric" min="1" max="${max}" value="${n > qtdChips ? n : ""}" placeholder="nº" style="width:64px;padding:4px 6px;color:#1f2a2e;background:#fff;border:1px solid #c9d3d6;border-radius:8px;font-weight:700">x</label>` : "");
         chips.querySelectorAll("[data-eparc]").forEach((b) => b.addEventListener("click", () => { c.entradaParcelas = Number(b.dataset.eparc); pintarEntradaParcelas(); pintar(); }));
-        $q("#sklSimEntradaParcHint", d).textContent = n > 1 && c.entradaValor > 0 ? `${n}x de ${brl(c.entradaValor / n)} sem juros (até ${max}x).` : `Pode ser dividida em até ${max}x sem juros.`;
+        const outro = $q("#sklSimEntradaParcOutro", d);
+        if (outro) outro.addEventListener("change", () => {
+            const v = Math.round(Number(outro.value) || 0);
+            if (v < 1) return;
+            c.entradaParcelas = Math.min(max, v);
+            pintarEntradaParcelas(); pintar();
+        });
+        const regraTxt = central ? ` A Central pode dividir em quantas vezes quiser (o corretor vê até ${entradaParcelasMaxCondicao(cond)}x).` : ` (até ${max}x).`;
+        $q("#sklSimEntradaParcHint", d).textContent = (n > 1 && c.entradaValor > 0 ? `${n}x de ${brl(c.entradaValor / n)} sem juros.` : "Entrada sem juros.") + regraTxt;
     }
     function pintarEntrada(semCampoValor, semCampoPct) {
         const d = st.dlg, c = st.ctx, cond = condAtual();
