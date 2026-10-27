@@ -287,7 +287,7 @@ Content-Type: application/json
         A.editandoId = cond ? cond.id : null;
         let d = $("#saCondDialog");
         if (!d) { d = document.createElement("dialog"); d.id = "saCondDialog"; d.className = "sa-dlg"; document.body.appendChild(d); }
-        const c = cond || { nome: "", tipo: "financiamento_bancario", banco: "", sistema: "price", taxa_aa: 11.49, tipo_taxa: "nominal", indexador: "TR", entrada_min_pct: 20, financiavel_max_pct: 80, prazo_min_meses: 60, prazo_max_meses: 420, opcoes_prazo: [120, 180, 240, 300, 360, 420], seguro_mip_pct_mes: 0.03, seguro_dfi_pct_mes: 0.01, tarifa_mensal: 25, vigencia_ate: "", fonte: "", observacao: "", ativo: true, permite_balao: false, balao_max_meses: 48, faixas_prazo: null, entrada_fixa: false, entrada_parcelas_max: 1, cet_fixo_aa: null, indexador_desde_parcela: null };
+        const c = cond || { nome: "", tipo: "financiamento_bancario", banco: "", sistema: "price", taxa_aa: 11.49, tipo_taxa: "nominal", indexador: "TR", entrada_min_pct: 20, financiavel_max_pct: 80, prazo_min_meses: 60, prazo_max_meses: 420, opcoes_prazo: [120, 180, 240, 300, 360, 420], seguro_mip_pct_mes: 0.03, seguro_dfi_pct_mes: 0.01, tarifa_mensal: 25, vigencia_ate: "", fonte: "", observacao: "", ativo: true, permite_balao: false, balao_max_meses: 48, faixas_prazo: null, entrada_fixa: false, entrada_parcelas_max: 1, cet_fixo_aa: null, indexador_desde_parcela: null, entrada_parcelas_opcoes: null, balao_corretor: null };
         const IDXOPT = [["", "Igual à condição"], ["nenhum", "Nenhuma"], ["IPCA", "IPCA"], ["INCC", "INCC"], ["IGPM", "IGP-M"], ["TR", "TR"]];
         const linhaFaixa = (f) => `<tr><td class="fx-de"></td>` +
             `<td><input class="fx-max" inputmode="numeric" value="${f && f.prazo_max_meses != null ? esc(f.prazo_max_meses) : ""}" placeholder="ex.: 60"></td>` +
@@ -311,6 +311,7 @@ Content-Type: application/json
  <label>Financiamento máximo (% do imóvel)<input id="scFin" inputmode="decimal" value="${esc(fmtNum(c.financiavel_max_pct, 0))}"></label>
  <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="scEntFixa" ${c.entrada_fixa ? "checked" : ""} style="width:auto;margin:0"> Entrada fixa (o corretor não altera o valor)</label>
  <label>Entrada pode ser parcelada em até (vezes, sem juros)<input id="scEntParc" inputmode="numeric" value="${esc(c.entrada_parcelas_max || 1)}"></label>
+ <label>Vezes da entrada para o corretor (ex.: 2, 3, 4, 5, 8, 10 — em branco = de 1 até o número acima)<input id="scEntOpc" value="${esc((c.entrada_parcelas_opcoes || []).join(", "))}" placeholder="2, 3, 4, 5, 8, 10"></label>
  <label>CET informado (% a.a. — opcional; em branco = calculado)<input id="scCet" inputmode="decimal" value="${c.cet_fixo_aa == null || c.cet_fixo_aa === "" ? "" : esc(fmtNum(c.cet_fixo_aa))}"></label>
  <label>Indexador só a partir de quantas parcelas (opcional)<input id="scIdxDesde" inputmode="numeric" value="${esc(c.indexador_desde_parcela || "")}"></label>
  <label>Prazo mínimo (meses)<input id="scPmin" inputmode="numeric" value="${esc(c.prazo_min_meses)}"></label>
@@ -321,6 +322,10 @@ Content-Type: application/json
  <button type="button" class="secondary-button" data-x="addFaixa" style="margin-top:6px">+ Adicionar faixa</button></div>
  <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="scBalao" ${c.permite_balao ? "checked" : ""} style="width:auto;margin:0"> Permite balão (o corretor escolhe quantas parcelas e o intervalo ao simular)</label>
  <label>Balão: até quantos meses no total<input id="scBalaoMax" inputmode="numeric" value="${esc(c.balao_max_meses || 48)}"></label>
+ <div class="sa-faixas"><b>Balão no app do corretor</b><p class="sa-hint">Vale só para o corretor; a Central continua livre. Em branco = o corretor escolhe livremente (respeitando o limite de meses acima).</p>
+ <div class="sa-grid"><label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="scBalaoCorLib" ${!c.balao_corretor || c.balao_corretor.liberado !== false ? "checked" : ""} style="width:auto;margin:0"> Corretor pode incluir balão</label>
+ <label>Máximo de balões para o corretor<input id="scBalaoCorQtd" inputmode="numeric" value="${esc((c.balao_corretor && c.balao_corretor.qtd_max) || "")}" placeholder="sem limite"></label>
+ <label>Intervalos permitidos (meses, ex.: 6, 12)<input id="scBalaoCorInt" value="${esc(((c.balao_corretor && c.balao_corretor.intervalos) || []).join(", "))}" placeholder="livre"></label></div></div>
  <label>Seguro MIP (% ao mês sobre o saldo)<input id="scMip" inputmode="decimal" value="${esc(fmtNum(c.seguro_mip_pct_mes, 3))}"></label>
  <label>Seguro DFI (% ao mês sobre o imóvel)<input id="scDfi" inputmode="decimal" value="${esc(fmtNum(c.seguro_dfi_pct_mes, 3))}"></label>
  <label>Tarifa mensal (R$)<input id="scTarifa" inputmode="decimal" value="${esc(fmtNum(c.tarifa_mensal))}"></label>
@@ -341,6 +346,12 @@ Content-Type: application/json
                 const faixas = lerFaixas();
                 if (faixas === null) { const m = $("#scMsg", d); m.textContent = "Confira as faixas: cada uma precisa de “Até (meses)” e de juros ao mês (0 = sem juros)."; m.hidden = false; return; }
                 const dados = { nome: g("#scNome"), tipo: g("#scTipo"), banco: g("#scBanco"), sistema: g("#scSistema"), taxa_aa: num(g("#scTaxa")), tipo_taxa: g("#scTipoTaxa"), indexador: g("#scIdx"), entrada_min_pct: num(g("#scEntrada")), financiavel_max_pct: num(g("#scFin")), prazo_min_meses: num(g("#scPmin")), prazo_max_meses: num(g("#scPmax")), opcoes_prazo: g("#scOpcoes").split(/[^\d]+/).filter(Boolean).map(Number), seguro_mip_pct_mes: num(g("#scMip")), seguro_dfi_pct_mes: num(g("#scDfi")), tarifa_mensal: num(g("#scTarifa")), vigencia_ate: g("#scVig") || null, fonte: g("#scFonte"), observacao: g("#scObs"), ativo: $("#scAtivo", d).checked, permite_balao: $("#scBalao", d).checked, balao_max_meses: num(g("#scBalaoMax")), faixas_prazo: faixas.length ? faixas : null, entrada_fixa: $("#scEntFixa", d).checked, entrada_parcelas_max: Math.min(12, Math.max(1, Math.round(num(g("#scEntParc")) || 1))), cet_fixo_aa: g("#scCet").trim() ? num(g("#scCet")) : null, indexador_desde_parcela: g("#scIdxDesde").trim() ? Math.max(1, Math.round(num(g("#scIdxDesde")))) : null };
+                // vezes da entrada do corretor (2..12) e regras do balão do corretor
+                const eOpc = [...new Set(g("#scEntOpc").split(/[^\d]+/).filter(Boolean).map(Number).filter((n) => n >= 2 && n <= 12))].sort((a, b) => a - b);
+                dados.entrada_parcelas_opcoes = eOpc.length ? eOpc : null;
+                if (eOpc.length) dados.entrada_parcelas_max = Math.max(dados.entrada_parcelas_max, eOpc[eOpc.length - 1]);
+                const bLib = $("#scBalaoCorLib", d).checked, bQtd = Math.round(num(g("#scBalaoCorQtd")) || 0), bInt = [...new Set(g("#scBalaoCorInt").split(/[^\d]+/).filter(Boolean).map(Number).filter((n) => n >= 1 && n <= 240))].sort((a, b) => a - b);
+                dados.balao_corretor = bLib && !bQtd && !bInt.length ? null : { liberado: bLib, qtd_max: bQtd > 0 ? Math.min(60, bQtd) : null, intervalos: bInt.length ? bInt : null };
                 Object.keys(dados).forEach((k) => { if (typeof dados[k] === "number" && Number.isNaN(dados[k])) dados[k] = null; });
                 try { await rpc("simulador_salvar_condicao", { p_empreendimento_id: A.empId, p_id: A.editandoId, p_dados: dados }); d.close(); toast("Condição salva."); await recarregarTudo(); }
                 catch (e) { const m = $("#scMsg", d); m.textContent = e.message; m.hidden = false; }

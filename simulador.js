@@ -141,7 +141,24 @@
         };
     }
     // limite da condição (o que o corretor pode escolher)
-    function entradaParcelasMaxCondicao(cond) { return Math.max(1, Math.min(12, Math.round(Number(cond && cond.entrada_parcelas_max) || 1))); }
+    // Acquaville (26/10/2026): vezes da entrada que o CORRETOR vê (condição.entrada_parcelas_opcoes, ex.: [2,3,4,5,8,10],
+    // configurado em Configurações → Simulação); sem lista = 1..entrada_parcelas_max, como antes.
+    function entradaOpcoesCorretor(cond) {
+        const lista = Array.isArray(cond && cond.entrada_parcelas_opcoes) ? cond.entrada_parcelas_opcoes.map(Number).filter((n) => n >= 2 && n <= 12) : [];
+        if (lista.length) return [1, ...[...new Set(lista)].sort((a, b) => a - b)];
+        const max = Math.max(1, Math.min(12, Math.round(Number(cond && cond.entrada_parcelas_max) || 1)));
+        return Array.from({ length: max }, (_, k) => k + 1);
+    }
+    // regras do balão no app do corretor (condição.balao_corretor = {liberado, qtd_max, intervalos}); sem regra = livre.
+    // A Central nunca é limitada por elas.
+    function regraBalao(cond) {
+        const r = st.papel !== "central" && cond && cond.balao_corretor && typeof cond.balao_corretor === "object" ? cond.balao_corretor : null;
+        if (!r) return { liberado: true, qtdMax: null, intervalos: null };
+        const ints = Array.isArray(r.intervalos) ? r.intervalos.map(Number).filter((n) => n >= 1) : [];
+        return { liberado: r.liberado !== false, qtdMax: Number(r.qtd_max) > 0 ? Math.round(Number(r.qtd_max)) : null, intervalos: ints.length ? ints : null };
+    }
+    function permiteBalao(cond) { return !!(cond && cond.permite_balao && regraBalao(cond).liberado); }
+    function entradaParcelasMaxCondicao(cond) { const o = entradaOpcoesCorretor(cond); return o[o.length - 1]; }
     // Acquaville (16/10/2026): a Central divide a entrada em quantas vezes quiser — o limite vira o prazo máximo
     // da condição. O corretor continua com o limite da condição. Esta cópia (Central) é diferente da do Corretor de propósito.
     function entradaParcelasMax(cond) {
@@ -416,11 +433,27 @@
         $q("#sklSimBalaoToggle", d).addEventListener("change", (e) => { $q("#sklSimBalaoCampos", d).hidden = !e.target.checked; atualizarBalaoTotal(); pintar(); });
         $q("#sklSimBalaoQtd", d).addEventListener("input", () => { atualizarBalaoTotal(); pintar(); });
         $q("#sklSimBalaoIntervalo", d).addEventListener("input", () => { marcarChipIntervalo(); atualizarBalaoTotal(); pintar(); });
-        $q("#sklSimBalaoIntervaloChips", d).querySelectorAll("[data-intervalo]").forEach((b) => b.addEventListener("click", () => { $q("#sklSimBalaoIntervalo", d).value = b.dataset.intervalo; marcarChipIntervalo(); atualizarBalaoTotal(); pintar(); }));
+        $q("#sklSimBalaoIntervaloChips", d).addEventListener("click", (ev) => { const b = ev.target.closest && ev.target.closest("[data-intervalo]"); if (!b) return; $q("#sklSimBalaoIntervalo", d).value = b.dataset.intervalo; marcarChipIntervalo(); atualizarBalaoTotal(); pintar(); });
         $q("#sklSimBalaoValor", d).addEventListener("input", (e) => { atualizarBalaoTotal(); pintar(); });
         $q("#sklSimBalaoValor", d).addEventListener("blur", (e) => { const v = parseValor(e.target.value); e.target.value = v > 0 ? fmtNum(v) : ""; });
         st.dlg = d;
         return d;
+    }
+    const NOMES_INTERVALO = { 4: "A cada 4 meses", 6: "Semestral", 12: "Anual" };
+    // botões de intervalo do balão: os definidos para o corretor (se houver) ou 4/6/12 meses
+    function montarChipsIntervalo(cond) {
+        const d = st.dlg, regra = regraBalao(cond);
+        const lista = regra.intervalos || [4, 6, 12];
+        $q("#sklSimBalaoIntervaloChips", d).innerHTML = lista.map((n) => `<button type="button" class="skl-sim-chip" data-intervalo="${n}">${NOMES_INTERVALO[n] || `A cada ${n} meses`}</button>`).join("");
+        const inp = $q("#sklSimBalaoIntervalo", d);
+        inp.readOnly = !!regra.intervalos;
+        if (regra.intervalos && !regra.intervalos.includes(Math.round(Number(inp.value) || 0))) inp.value = String(regra.intervalos.includes(12) ? 12 : regra.intervalos[0]);
+        if (st.papel !== "central") {
+            const qtd = $q("#sklSimBalaoQtd", d);
+            qtd.max = String(regra.qtdMax || 12);
+            if (regra.qtdMax && Number(qtd.value) > regra.qtdMax) qtd.value = String(regra.qtdMax);
+        }
+        marcarChipIntervalo();
     }
     function marcarChipIntervalo() {
         const d = st.dlg, v = String(Math.round(Number($q("#sklSimBalaoIntervalo", d).value) || 0));
@@ -428,11 +461,14 @@
     }
     function balaoParams() {
         const d = st.dlg, cond = condAtual();
-        if (!cond || !cond.permite_balao) return [];
+        if (!permiteBalao(cond)) return [];
         const toggle = $q("#sklSimBalaoToggle", d);
         if (!toggle || !toggle.checked) return [];
-        const qtd = Math.max(1, Math.round(Number($q("#sklSimBalaoQtd", d).value) || 0));
-        const intervalo = Math.max(1, Math.round(Number($q("#sklSimBalaoIntervalo", d).value) || 0));
+        const regra = regraBalao(cond);
+        let qtd = Math.max(1, Math.round(Number($q("#sklSimBalaoQtd", d).value) || 0));
+        if (regra.qtdMax && qtd > regra.qtdMax) { qtd = regra.qtdMax; $q("#sklSimBalaoQtd", d).value = String(qtd); }
+        let intervalo = Math.max(1, Math.round(Number($q("#sklSimBalaoIntervalo", d).value) || 0));
+        if (regra.intervalos && !regra.intervalos.includes(intervalo)) intervalo = regra.intervalos[0];
         const valor = parseValor($q("#sklSimBalaoValor", d).value);
         const lista = [];
         for (let k = 1; k <= qtd; k++) lista.push({ mes: intervalo * k, valor });
@@ -440,7 +476,8 @@
     }
     function atualizarBalaoTotal() {
         const d = st.dlg, cond = condAtual();
-        if (!cond || !cond.permite_balao) return;
+        if (!permiteBalao(cond)) return;
+        const regraQtd = regraBalao(cond).qtdMax ? ` Até ${regraBalao(cond).qtdMax} balão(ões).` : "";
         const lista = balaoParams();
         const total = lista.reduce((s, b) => s + b.valor, 0);
         $q("#sklSimBalaoTotal", d).value = lista.length ? brl(total) : "";
@@ -481,8 +518,10 @@
     function pintarBalaoSecao(cond, manter) {
         const d = st.dlg;
         const sec = $q("#sklSimBalaoSec", d);
-        sec.hidden = !cond.permite_balao;
-        if (!cond.permite_balao) { $q("#sklSimBalaoToggle", d).checked = false; $q("#sklSimBalaoCampos", d).hidden = true; return; }
+        const permite = permiteBalao(cond);
+        sec.hidden = !permite;
+        if (!permite) { $q("#sklSimBalaoToggle", d).checked = false; $q("#sklSimBalaoCampos", d).hidden = true; return; }
+        montarChipsIntervalo(cond);
         // Central: quantos balões quiser, desde que o último caia até o limite de meses da condição (a regra continua valendo)
         if (st.papel === "central") $q("#sklSimBalaoQtd", d).max = String(Math.max(1, Math.round(Number(cond.balao_max_meses) || 1)));
         if (manter) return;
@@ -492,11 +531,11 @@
             const intervalo = pre.length > 1 ? pre[1].mes - pre[0].mes : pre[0].mes;
             $q("#sklSimBalaoQtd", d).value = pre.length; $q("#sklSimBalaoIntervalo", d).value = intervalo;
             $q("#sklSimBalaoValor", d).value = pre[0].valor > 0 ? fmtNum(pre[0].valor) : "";
-            marcarChipIntervalo();
+            montarChipsIntervalo(cond);
         } else {
             $q("#sklSimBalaoToggle", d).checked = false; $q("#sklSimBalaoCampos", d).hidden = true;
             $q("#sklSimBalaoQtd", d).value = "1"; $q("#sklSimBalaoIntervalo", d).value = "12"; $q("#sklSimBalaoValor", d).value = "";
-            marcarChipIntervalo();
+            montarChipsIntervalo(cond);
         }
         atualizarBalaoTotal();
     }
@@ -556,7 +595,7 @@
             c.entradaParcelas = Math.min(max, v);
             pintarEntradaParcelas(); pintar();
         });
-        const regraTxt = central ? ` A Central pode dividir em quantas vezes quiser (o corretor vê até ${entradaParcelasMaxCondicao(cond)}x).` : ` (até ${max}x).`;
+        const regraTxt = central ? ` A Central pode dividir em quantas vezes quiser (o corretor vê: ${entradaOpcoesCorretor(cond).map((k) => (k === 1 ? "à vista" : k + "x")).join(", ")}).` : ` (até ${max}x).`;
         $q("#sklSimEntradaParcHint", d).textContent = (n > 1 && c.entradaValor > 0 ? `${n}x de ${brl(c.entradaValor / n)} sem juros.` : "Entrada sem juros.") + regraTxt;
     }
     function pintarEntrada(semCampoValor, semCampoPct) {
